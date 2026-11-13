@@ -22,11 +22,17 @@ describe('Gemini structured output handling', () => {
       { safe: 'yes', categories: [], userMessage: '' },
       { safe: true, categories: ['none'], userMessage: '' },
     ]);
-    const value = await generateStructured(session, {
-      model: 'fixture-model',
-      buildPrompt: (error) => ({ system: 'JSON only', user: `Fix any error: ${error ?? 'none'}` }),
-      jsonSchema: {}, temperature: 0.1, timeoutMs: 1000,
-    }, SafetyResultSchema);
+    const value = await generateStructured(
+      session,
+      {
+        model: 'fixture-model',
+        buildPrompt: (error) => ({ system: 'JSON only', user: `Fix any error: ${error ?? 'none'}` }),
+        jsonSchema: {},
+        temperature: 0.1,
+        timeoutMs: 1000,
+      },
+      SafetyResultSchema,
+    );
     expect(value.safe).toBe(true);
     expect(session.generateJson).toHaveBeenCalledTimes(2);
     expect(vi.mocked(session.generateJson).mock.calls[1][0].prompt.user).toContain('Expected boolean');
@@ -34,9 +40,19 @@ describe('Gemini structured output handling', () => {
 
   it('does not retry a non-transient request error as a schema failure', async () => {
     const session = fakeSession([Object.assign(new Error('unauthorized'), { status: 401 })]);
-    await expect(generateStructured(session, {
-      model: 'fixture-model', buildPrompt: () => ({ system: 'system', user: 'user' }), jsonSchema: {}, temperature: 0.1, timeoutMs: 1000,
-    }, SafetyResultSchema)).rejects.toThrow('unauthorized');
+    await expect(
+      generateStructured(
+        session,
+        {
+          model: 'fixture-model',
+          buildPrompt: () => ({ system: 'system', user: 'user' }),
+          jsonSchema: {},
+          temperature: 0.1,
+          timeoutMs: 1000,
+        },
+        SafetyResultSchema,
+      ),
+    ).rejects.toThrow('unauthorized');
     expect(session.generateJson).toHaveBeenCalledOnce();
   });
 

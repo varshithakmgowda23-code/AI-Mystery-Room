@@ -17,7 +17,9 @@ app.use(cookieParser());
 app.use('/api/health', healthRouter);
 app.use('/api', (request, response, next) => {
   if (request.method !== 'GET' && !request.is('application/json')) {
-    response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Mutating requests must use application/json.' } });
+    response
+      .status(400)
+      .json({ error: { code: 'VALIDATION_ERROR', message: 'Mutating requests must use application/json.' } });
     return;
   }
   next();

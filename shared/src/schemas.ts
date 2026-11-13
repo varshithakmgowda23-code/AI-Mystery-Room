@@ -2,11 +2,13 @@ import { z } from 'zod';
 
 export const DifficultySchema = z.enum(['easy', 'medium', 'hard']);
 export const ToneSchema = z.enum(['classic_noir', 'modern_thriller', 'cozy', 'corporate']);
-export const CaseCreationSchema = z.object({
-  seed: z.string().trim().min(10).max(500),
-  difficulty: DifficultySchema,
-  tone: ToneSchema,
-}).strict();
+export const CaseCreationSchema = z
+  .object({
+    seed: z.string().trim().min(10).max(500),
+    difficulty: DifficultySchema,
+    tone: ToneSchema,
+  })
+  .strict();
 export const CaseIdSchema = z.string().regex(/^[a-f\d]{24}$/i);
 export const CaseStatusSchema = z.enum(['queued', 'generating', 'ready', 'failed']);
 export const HealthResponseSchema = z.object({

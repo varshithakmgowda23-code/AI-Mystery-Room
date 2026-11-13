@@ -2,7 +2,13 @@ import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai';
 import { env } from '../../config/env.js';
 
 export type GeminiUsage = { textCalls: number; inputTokens: number; outputTokens: number; images: number };
-export type GenerateJsonOptions = { model: string; prompt: { system: string; user: string }; jsonSchema: unknown; temperature: number; timeoutMs: number };
+export type GenerateJsonOptions = {
+  model: string;
+  prompt: { system: string; user: string };
+  jsonSchema: unknown;
+  temperature: number;
+  timeoutMs: number;
+};
 export type GeneratedImage = { bytes: Buffer; mimeType: string };
 
 export interface GeminiSession {
@@ -25,17 +31,25 @@ function isRetryable(error: unknown): boolean {
   const status = errorStatus(error);
   if (status === 429) return false;
   if (status !== undefined && status >= 500) return true;
-  return typeof error === 'object' && error !== null && ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String((error as { code?: unknown }).code));
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String((error as { code?: unknown }).code))
+  );
 }
 
 class GeminiContentBlockedError extends Error {
-  constructor(reason: string) { super(`Gemini blocked this content for safety: ${reason}`); this.name = 'GeminiContentBlockedError'; }
+  constructor(reason: string) {
+    super(`Gemini blocked this content for safety: ${reason}`);
+    this.name = 'GeminiContentBlockedError';
+  }
 }
 
 async function retry<T>(operation: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
-    try { return await operation(); }
-    catch (error) {
+    try {
+      return await operation();
+    } catch (error) {
       if (!isRetryable(error) || attempt >= 2) throw error;
       await new Promise((resolve) => setTimeout(resolve, 350 * 2 ** attempt));
     }
@@ -66,15 +80,22 @@ export class GoogleGeminiSession implements GeminiSession {
           safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+            {
+              category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+              threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            },
+            {
+              category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+              threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            },
           ],
           httpOptions: { timeout: options.timeoutMs, retryOptions: { attempts: 1 } },
           abortSignal: AbortSignal.timeout(options.timeoutMs),
         },
       });
       const text = response.text;
-      if (!text && response.promptFeedback?.blockReason) throw new GeminiContentBlockedError(String(response.promptFeedback.blockReason));
+      if (!text && response.promptFeedback?.blockReason)
+        throw new GeminiContentBlockedError(String(response.promptFeedback.blockReason));
       if (!text) throw new Error('Gemini returned no JSON content.');
       this.metrics.textCalls += 1;
       this.metrics.inputTokens += response.usageMetadata?.promptTokenCount ?? 0;
@@ -85,10 +106,13 @@ export class GoogleGeminiSession implements GeminiSession {
 
   async generateImage(prompt: string): Promise<GeneratedImage> {
     return retry(async () => {
-      const interaction = await this.imageClient.interactions.create({
-        model: env.GEMINI_IMAGE_MODEL,
-        input: prompt,
-      }, { timeout_ms: 90_000, retries: { strategy: 'none' } });
+      const interaction = await this.imageClient.interactions.create(
+        {
+          model: env.GEMINI_IMAGE_MODEL,
+          input: prompt,
+        },
+        { timeout_ms: 90_000, retries: { strategy: 'none' } },
+      );
       const image = interaction.output_image;
       if (!image?.data) throw new Error('Gemini image generation returned no image data.');
       this.metrics.images += 1;
@@ -107,7 +131,9 @@ export function createGeminiSession(): GeminiSession {
 
 export async function generateStructured<T>(
   session: GeminiSession,
-  input: Omit<GenerateJsonOptions, 'prompt'> & { buildPrompt: (validationError?: string) => { system: string; user: string } },
+  input: Omit<GenerateJsonOptions, 'prompt'> & {
+    buildPrompt: (validationError?: string) => { system: string; user: string };
+  },
   schema: { parse(value: unknown): T },
 ): Promise<T> {
   let validationError: string | undefined;
@@ -132,7 +158,13 @@ export async function generateStructured<T>(
 }
 
 export function isContentBlocked(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && /blocked|safety|prohibited/i.test(String((error as { message?: unknown }).message ?? ''));
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    /blocked|safety|prohibited/i.test(String((error as { message?: unknown }).message ?? ''))
+  );
 }
 
-export function isRetryableGeminiError(error: unknown): boolean { return isRetryable(error); }
+export function isRetryableGeminiError(error: unknown): boolean {
+  return isRetryable(error);
+}

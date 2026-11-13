@@ -18,7 +18,9 @@ export function casesController(queue: JobQueue) {
       const userId = response.locals.userId as string;
       const user = await UserModel.findById(userId).select('isGuest guestExpiresAt');
       if (!user) {
-        response.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Your session has expired. Please sign in again.' } });
+        response
+          .status(401)
+          .json({ error: { code: 'UNAUTHENTICATED', message: 'Your session has expired. Please sign in again.' } });
         return;
       }
       const activeCount = await CaseModel.countDocuments({ userId, status: { $in: ['queued', 'generating'] } });
@@ -26,7 +28,17 @@ export function casesController(queue: JobQueue) {
       const dailyCount = await CaseModel.countDocuments({ userId, createdAt: { $gte: dayAgo } });
       const dailyLimit = user.isGuest ? env.MAX_GENERATIONS_PER_DAY_GUEST : env.MAX_GENERATIONS_PER_DAY_USER;
       if (activeCount >= 2 || dailyCount >= dailyLimit) {
-        response.status(429).json({ error: { code: 'RATE_LIMITED', message: activeCount >= 2 ? 'You already have two cases generating. Wait for one to finish before opening another.' : `You have reached your ${dailyLimit}-case daily limit.` } });
+        response
+          .status(429)
+          .json({
+            error: {
+              code: 'RATE_LIMITED',
+              message:
+                activeCount >= 2
+                  ? 'You already have two cases generating. Wait for one to finish before opening another.'
+                  : `You have reached your ${dailyLimit}-case daily limit.`,
+            },
+          });
         return;
       }
 
@@ -36,9 +48,19 @@ export function casesController(queue: JobQueue) {
       }
 
       const caseDoc = new CaseModel({
-        userId, seed: input.seed, difficulty: input.difficulty, tone: input.tone,
-        status: 'queued', progress: { stage: 'queued', percent: 0 }, generationAttempts: 0,
-        state: { hintsUsed: 0, attemptsUsed: 0, maxAttempts: input.difficulty === 'easy' ? 3 : 2, startedAt: new Date() },
+        userId,
+        seed: input.seed,
+        difficulty: input.difficulty,
+        tone: input.tone,
+        status: 'queued',
+        progress: { stage: 'queued', percent: 0 },
+        generationAttempts: 0,
+        state: {
+          hintsUsed: 0,
+          attemptsUsed: 0,
+          maxAttempts: input.difficulty === 'easy' ? 3 : 2,
+          startedAt: new Date(),
+        },
         ...(user.isGuest ? { expiresAt: user.guestExpiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) } : {}),
       });
       await caseDoc.save();
@@ -49,7 +71,11 @@ export function casesController(queue: JobQueue) {
     status: async (request: Request, response: Response): Promise<void> => {
       const parsedId = CaseIdSchema.safeParse(request.params.id);
       if (!parsedId.success) {
-        response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'The case ID is invalid.', details: parsedId.error.issues } });
+        response
+          .status(400)
+          .json({
+            error: { code: 'VALIDATION_ERROR', message: 'The case ID is invalid.', details: parsedId.error.issues },
+          });
         return;
       }
       const caseDoc = await CaseModel.findOne({ _id: parsedId.data, userId: response.locals.userId });
@@ -58,20 +84,27 @@ export function casesController(queue: JobQueue) {
         return;
       }
       const status = CaseStatusSchema.parse(caseDoc.status);
-      const generationError = status === 'failed'
-        ? caseDoc.failureCode === 'CONTENT_POLICY'
-          ? { code: 'CONTENT_POLICY', message: CONTENT_POLICY_MESSAGE }
-          : classifyStoredGenerationError(caseDoc.failureCode, caseDoc.failureReason)
-        : undefined;
+      const generationError =
+        status === 'failed'
+          ? caseDoc.failureCode === 'CONTENT_POLICY'
+            ? { code: 'CONTENT_POLICY', message: CONTENT_POLICY_MESSAGE }
+            : classifyStoredGenerationError(caseDoc.failureCode, caseDoc.failureReason)
+          : undefined;
       response.status(200).json({
         status,
-        progress: { stage: caseDoc.progress?.stage ?? 'queued', percent: caseDoc.progress?.percent ?? 0, label: generationStageLabel(caseDoc.progress?.stage ?? 'queued') },
-        ...(generationError ? {
-          error: {
-            ...generationError,
-            ...(caseDoc.failureRetryAt ? { retryAt: new Date(caseDoc.failureRetryAt).toISOString() } : {}),
-          },
-        } : {}),
+        progress: {
+          stage: caseDoc.progress?.stage ?? 'queued',
+          percent: caseDoc.progress?.percent ?? 0,
+          label: generationStageLabel(caseDoc.progress?.stage ?? 'queued'),
+        },
+        ...(generationError
+          ? {
+              error: {
+                ...generationError,
+                ...(caseDoc.failureRetryAt ? { retryAt: new Date(caseDoc.failureRetryAt).toISOString() } : {}),
+              },
+            }
+          : {}),
       });
     },
   };

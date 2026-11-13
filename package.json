@@ -3,19 +3,27 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "workspaces": ["client", "server", "shared"],
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
   "scripts": {
     "dev": "npm run build --workspace=shared && concurrently -k -n api,client -c blue,magenta \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
     "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspace=shared && npm run typecheck --workspace=server && npm run typecheck --workspace=client",
-    "test": "npm run build --workspace=shared && vitest run"
+    "test": "npm run build --workspace=shared && vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
     "concurrently": "^9.2.0",
     "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.8",
     "globals": "^16.2.0",
+    "prettier": "^3.10.1",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.0",
     "vitest": "^3.2.4"

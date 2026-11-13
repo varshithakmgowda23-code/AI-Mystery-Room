@@ -78,7 +78,8 @@ describe('authentication API', () => {
     const cookie = guest.headers['set-cookie'][0].split(';')[0];
 
     const response = await request(app).post('/api/auth/upgrade').set('Cookie', cookie).send({
-      email: 'Casey@example.com', password: 'a-secure-password',
+      email: 'Casey@example.com',
+      password: 'a-secure-password',
     });
 
     expect(response.status).toBe(200);

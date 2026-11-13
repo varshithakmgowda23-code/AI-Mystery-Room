@@ -18,12 +18,14 @@ export class InProcessJobQueue implements JobQueue {
       const task = this.waiting.shift();
       if (!task) return;
       this.active += 1;
-      void task().catch((error: unknown) => {
-        console.error('Background job failed:', error);
-      }).finally(() => {
-        this.active -= 1;
-        this.runNext();
-      });
+      void task()
+        .catch((error: unknown) => {
+          console.error('Background job failed:', error);
+        })
+        .finally(() => {
+          this.active -= 1;
+          this.runNext();
+        });
     }
   }
 }

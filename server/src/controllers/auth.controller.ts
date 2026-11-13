@@ -11,21 +11,39 @@ import {
   verifyPassword,
 } from '../services/auth.service.js';
 
-export const RegisterSchema = z.object({
-  email: z.string().trim().email().max(254),
-  password: z.string().min(8).max(128),
-  displayName: z.string().trim().min(1).max(60),
-}).strict();
+export const RegisterSchema = z
+  .object({
+    email: z.string().trim().email().max(254),
+    password: z.string().min(8).max(128),
+    displayName: z.string().trim().min(1).max(60),
+  })
+  .strict();
 
-export const LoginSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(128) }).strict();
-export const UpgradeSchema = z.object({
-  email: z.string().trim().email().max(254),
-  password: z.string().min(8).max(128),
-  displayName: z.string().trim().min(1).max(60).optional(),
-}).strict();
+export const LoginSchema = z
+  .object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(128) })
+  .strict();
+export const UpgradeSchema = z
+  .object({
+    email: z.string().trim().email().max(254),
+    password: z.string().min(8).max(128),
+    displayName: z.string().trim().min(1).max(60).optional(),
+  })
+  .strict();
 
-function toPlayerUser(user: { _id: unknown; email?: string | null; displayName: string; isGuest: boolean; createdAt: Date }) {
-  return { id: String(user._id), email: user.email ?? null, displayName: user.displayName, isGuest: user.isGuest, createdAt: user.createdAt };
+function toPlayerUser(user: {
+  _id: unknown;
+  email?: string | null;
+  displayName: string;
+  isGuest: boolean;
+  createdAt: Date;
+}) {
+  return {
+    id: String(user._id),
+    email: user.email ?? null,
+    displayName: user.displayName,
+    isGuest: user.isGuest,
+    createdAt: user.createdAt,
+  };
 }
 
 function sendFailure(response: Response, status: number, code: string, message: string): void {
@@ -39,7 +57,12 @@ export async function register(response: Response): Promise<void> {
     sendFailure(response, 400, 'VALIDATION_ERROR', 'An account with that email already exists.');
     return;
   }
-  const user = await UserModel.create({ email, passwordHash: await hashPassword(input.password), displayName: input.displayName, isGuest: false });
+  const user = await UserModel.create({
+    email,
+    passwordHash: await hashPassword(input.password),
+    displayName: input.displayName,
+    isGuest: false,
+  });
   setSessionCookie(response, String(user._id));
   response.status(201).json({ user: toPlayerUser(user) });
 }

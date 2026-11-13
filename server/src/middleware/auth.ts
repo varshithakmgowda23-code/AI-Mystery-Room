@@ -15,6 +15,8 @@ export function requireAuth(request: Request, response: Response, next: NextFunc
     response.locals.userId = payload.sub;
     next();
   } catch {
-    response.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Your session has expired. Please sign in again.' } });
+    response
+      .status(401)
+      .json({ error: { code: 'UNAUTHENTICATED', message: 'Your session has expired. Please sign in again.' } });
   }
 }
