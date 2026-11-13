@@ -28,17 +28,15 @@ export function casesController(queue: JobQueue) {
       const dailyCount = await CaseModel.countDocuments({ userId, createdAt: { $gte: dayAgo } });
       const dailyLimit = user.isGuest ? env.MAX_GENERATIONS_PER_DAY_GUEST : env.MAX_GENERATIONS_PER_DAY_USER;
       if (activeCount >= 2 || dailyCount >= dailyLimit) {
-        response
-          .status(429)
-          .json({
-            error: {
-              code: 'RATE_LIMITED',
-              message:
-                activeCount >= 2
-                  ? 'You already have two cases generating. Wait for one to finish before opening another.'
-                  : `You have reached your ${dailyLimit}-case daily limit.`,
-            },
-          });
+        response.status(429).json({
+          error: {
+            code: 'RATE_LIMITED',
+            message:
+              activeCount >= 2
+                ? 'You already have two cases generating. Wait for one to finish before opening another.'
+                : `You have reached your ${dailyLimit}-case daily limit.`,
+          },
+        });
         return;
       }
 
@@ -71,11 +69,9 @@ export function casesController(queue: JobQueue) {
     status: async (request: Request, response: Response): Promise<void> => {
       const parsedId = CaseIdSchema.safeParse(request.params.id);
       if (!parsedId.success) {
-        response
-          .status(400)
-          .json({
-            error: { code: 'VALIDATION_ERROR', message: 'The case ID is invalid.', details: parsedId.error.issues },
-          });
+        response.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'The case ID is invalid.', details: parsedId.error.issues },
+        });
         return;
       }
       const caseDoc = await CaseModel.findOne({ _id: parsedId.data, userId: response.locals.userId });

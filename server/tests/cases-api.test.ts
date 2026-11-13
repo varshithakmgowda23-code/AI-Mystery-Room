@@ -158,6 +158,13 @@ describe('case generation API', () => {
     expect(response.body.error).toBeUndefined();
   });
 
+  it.each(['in_progress', 'resolved'])('reports the %s gameplay status instead of failing', async (status) => {
+    modelState.caseRecord = { status, progress: { stage: 'complete', percent: 100 } };
+    const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe(status);
+  });
+
   it('returns failed generation details as a structured safe error', async () => {
     modelState.caseRecord = {
       status: 'failed',

@@ -177,3 +177,11 @@ It's small, unblocks everything else, and fixes the security issue and two bugs 
 2. Pick a database for development: **local MongoDB via Homebrew** (lightweight, recommended) or **MongoDB Atlas M0** with new credentials kept only in `server/.env`.
 3. Whether you have a Gemini API key, and which tier. Only Phase B needs it.
 4. A decision on interrogation (§6).
+
+---
+
+## 9. Progress log
+
+| Phase | Status | Verified |
+|---|---|---|
+| A: Hygiene & foundation | ✅ Done (2026-11-14) | S-1 scrubbed (rotation is owner's job), S-2 helmet/rate limits/operator rejection, S-3 JSON 400/413, S-4 pino logging, S-5 fail-fast DB with reconnect, FR-03 upgrade fix, `/status` accepts `in_progress`/`resolved`, Prettier, CI, README, client `.env.example`, local MongoDB, Playwright smoke (desktop + mobile) green, full guest → case → ready → upgrade flow against real MongoDB |

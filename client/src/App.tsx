@@ -1,9 +1,12 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Difficulty, Tone } from '@ai-mystery-room/shared';
+import type { CaseStatus, Difficulty, Tone } from '@ai-mystery-room/shared';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api';
+const PLAYABLE_STATUSES: readonly CaseStatus[] = ['ready', 'in_progress', 'resolved'];
+const isPlayable = (status?: CaseStatus) => status !== undefined && PLAYABLE_STATUSES.includes(status);
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 type User = { id: string; email: string | null; displayName: string; isGuest: boolean };
 
 const generationErrorMessages: Record<string, string> = {
@@ -44,7 +47,7 @@ async function getCurrentUser(): Promise<User | null> {
   const response = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
   if (response.status === 401) return null;
   if (!response.ok) throw new Error('Could not check your session.');
-  const result = (await response.json()) as { user: User };
+  const result = (await response.json()) as { user: User | null };
   return result.user;
 }
 
@@ -67,7 +70,7 @@ async function createCase(payload: { seed: string; difficulty: Difficulty; tone:
 }
 
 type CaseProgress = {
-  status: 'queued' | 'generating' | 'ready' | 'failed';
+  status: CaseStatus;
   progress: { stage: string; percent: number; label: string };
   error?: string;
   errorCode?: string;
@@ -109,7 +112,12 @@ function HomePage() {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [tone, setTone] = useState<Tone>('classic_noir');
   const create = useMutation({
-    mutationFn: createCase,
+    mutationFn: async (payload: { seed: string; difficulty: Difficulty; tone: Tone }) => {
+      // Start a guest session first so the create request is never sent unauthenticated.
+      const user = await queryClient.fetchQuery({ queryKey: ['current-user'], queryFn: getCurrentUser });
+      if (!user) queryClient.setQueryData(['current-user'], await postAuth('guest'));
+      return createCase(payload);
+    },
     onSuccess: async (caseId) => {
       await queryClient.invalidateQueries({ queryKey: ['current-user'] });
       navigate(`/cases/${caseId}/generating`);
@@ -117,8 +125,8 @@ function HomePage() {
   });
   const guest = useMutation({
     mutationFn: () => postAuth('guest'),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['current-user'] });
+    onSuccess: (user: User) => {
+      queryClient.setQueryData(['current-user'], user);
       navigate('/cases');
     },
   });
@@ -223,8 +231,8 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('');
   const mutation = useMutation({
     mutationFn: (payload: Record<string, string>) => postAuth(mode, payload),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['current-user'] });
+    onSuccess: (user: User) => {
+      queryClient.setQueryData(['current-user'], user);
       navigate('/cases');
     },
     onError: (reason: Error) => setError(reason.message),
@@ -364,7 +372,7 @@ function GeneratingPage() {
     enabled: Boolean(caseId),
     retry: false,
     refetchInterval: (query) =>
-      query.state.data?.status === 'ready' || query.state.data?.status === 'failed' ? false : 2000,
+      isPlayable(query.state.data?.status) || query.state.data?.status === 'failed' ? false : 2000,
   });
   useEffect(() => {
     if (status.data?.status === 'failed' && !status.data.errorCode && status.data.error === genericGenerationError) {
@@ -372,7 +380,7 @@ function GeneratingPage() {
     }
   }, [status.data?.status, status.data?.errorCode, status.data?.error, status.refetch]);
   useEffect(() => {
-    if (status.data?.status === 'ready') navigate(`/cases/${caseId}`, { replace: true });
+    if (isPlayable(status.data?.status)) navigate(`/cases/${caseId}`, { replace: true });
   }, [caseId, navigate, status.data?.status]);
   const percent = status.data?.progress.percent ?? 0;
   return (
@@ -423,7 +431,7 @@ function CaseBoardPlaceholder() {
         <p className="eyebrow">OPENING CASE FILE…</p>
       </main>
     );
-  if (status.data?.status !== 'ready') return <Navigate to={`/cases/${caseId}/generating`} replace />;
+  if (!isPlayable(status.data?.status)) return <Navigate to={`/cases/${caseId}/generating`} replace />;
   return (
     <main className="auth-shell">
       <section className="auth-card">

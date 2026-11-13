@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Request, Response } from 'express';
 import { UserModel } from '../db/models/User.js';
+import { CaseModel } from '../db/models/Case.js';
 import {
   clearSessionCookie,
   guestExpiry,
@@ -90,10 +91,13 @@ export function logout(_request: Request, response: Response): void {
   response.status(200).json({ success: true });
 }
 
+/** API-06. Signed-out visitors get `{ user: null }` (200) rather than a 401 (DEC-009). */
 export async function me(response: Response): Promise<void> {
-  const user = await UserModel.findById(response.locals.userId as string);
+  const userId = response.locals.userId as string | undefined;
+  const user = userId ? await UserModel.findById(userId) : null;
   if (!user) {
-    sendFailure(response, 401, 'UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
+    if (userId) clearSessionCookie(response);
+    response.status(200).json({ user: null });
     return;
   }
   response.status(200).json({ user: toPlayerUser(user) });
@@ -121,6 +125,8 @@ export async function upgrade(response: Response): Promise<void> {
   user.isGuest = false;
   user.guestExpiresAt = undefined;
   await user.save();
+  // FR-03: keep the guest's cases. Remove the guest TTL so they are not purged after 7 days.
+  await CaseModel.updateMany({ userId: user._id, expiresAt: { $exists: true } }, { $unset: { expiresAt: 1 } });
   setSessionCookie(response, String(user._id));
   response.status(200).json({ user: toPlayerUser(user) });
 }

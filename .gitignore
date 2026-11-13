@@ -6,3 +6,5 @@ coverage/
 !.env.example
 server/storage/
 *.log
+test-results/
+playwright-report/

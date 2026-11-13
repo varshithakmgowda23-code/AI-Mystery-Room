@@ -18,6 +18,7 @@ import { buildEvidencePrompt } from './gemini/prompts/evidence.prompt.js';
 import { buildValidatorPrompt } from './gemini/prompts/validator.prompt.js';
 import { getStorageDriver, type StorageDriver } from './storage/index.js';
 import { classifyGeminiError, isGeminiQuotaError } from './gemini/errors.js';
+import { logger } from '../utils/logger.js';
 
 class CaseValidationError extends Error {
   constructor(message: string) {
@@ -461,13 +462,13 @@ export async function generateRealCase(
           },
         },
       );
-      console.info(JSON.stringify({ event: 'case_generation_cost', caseId, ...session.usage() }));
+      logger.info({ event: 'case_generation_cost', caseId, ...session.usage() }, 'case generation cost');
       return;
     }
     throw new CaseValidationError(lastValidationError ?? 'Case validation failed after three attempts.');
   } catch (error) {
     await cleanupMedia(storage, storedFiles);
-    console.info(JSON.stringify({ event: 'case_generation_cost', caseId, failed: true, ...session.usage() }));
+    logger.info({ event: 'case_generation_cost', caseId, failed: true, ...session.usage() }, 'case generation cost');
     throw error;
   }
 }

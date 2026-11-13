@@ -15,10 +15,12 @@
     "typecheck": "npm run typecheck --workspace=shared && npm run typecheck --workspace=server && npm run typecheck --workspace=client",
     "test": "npm run build --workspace=shared && vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
+    "@playwright/test": "^1.65.0",
     "concurrently": "^9.2.0",
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.1.8",

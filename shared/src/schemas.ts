@@ -10,7 +10,7 @@ export const CaseCreationSchema = z
   })
   .strict();
 export const CaseIdSchema = z.string().regex(/^[a-f\d]{24}$/i);
-export const CaseStatusSchema = z.enum(['queued', 'generating', 'ready', 'failed']);
+export const CaseStatusSchema = z.enum(['queued', 'generating', 'ready', 'in_progress', 'resolved', 'failed']);
 export const HealthResponseSchema = z.object({
   status: z.enum(['ok', 'degraded']),
   service: z.literal('ai-mystery-room-api'),
@@ -21,3 +21,4 @@ export const HealthResponseSchema = z.object({
 export type Difficulty = z.infer<typeof DifficultySchema>;
 export type Tone = z.infer<typeof ToneSchema>;
 export type CaseCreation = z.infer<typeof CaseCreationSchema>;
+export type CaseStatus = z.infer<typeof CaseStatusSchema>;

@@ -22,7 +22,7 @@ describe('case status client handling', () => {
       fetchMock.mockResolvedValue(mockStatusResponse({ status, progress }));
 
       await expect(getCaseStatus('case-123')).resolves.toMatchObject({ status, progress });
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:5000/api/cases/case-123/status', {
+      expect(fetchMock).toHaveBeenCalledWith('/api/cases/case-123/status', {
         credentials: 'include',
       });
     },
