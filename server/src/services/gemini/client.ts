@@ -1,7 +1,15 @@
 import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from '@google/genai';
 import { env } from '../../config/env.js';
+import { isGeminiQuotaError, shortRateLimitDelayMs } from './errors.js';
+import { logger } from '../../utils/logger.js';
 
-export type GeminiUsage = { textCalls: number; inputTokens: number; outputTokens: number; images: number };
+export type GeminiUsage = {
+  textCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  images: number;
+  fallbacks: number;
+};
 export type GenerateJsonOptions = {
   model: string;
   prompt: { system: string; user: string };
@@ -38,6 +46,16 @@ function isRetryable(error: unknown): boolean {
   );
 }
 
+/** 5xx, gateway deadline, or our own request timeout: worth trying another model. */
+export function isOverloaded(error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status !== undefined && status >= 500) return true;
+  if (typeof error !== 'object' || error === null) return false;
+  const { name, message } = error as { name?: unknown; message?: unknown };
+  if (name === 'TimeoutError' || name === 'AbortError') return true;
+  return typeof message === 'string' && /"code":\s*50[0-9]|DEADLINE_EXCEEDED|UNAVAILABLE|high demand/i.test(message);
+}
+
 class GeminiContentBlockedError extends Error {
   constructor(reason: string) {
     super(`Gemini blocked this content for safety: ${reason}`);
@@ -45,13 +63,50 @@ class GeminiContentBlockedError extends Error {
   }
 }
 
-async function retry<T>(operation: () => Promise<T>): Promise<T> {
-  for (let attempt = 0; ; attempt += 1) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Process-wide cap on in-flight Gemini requests so parallel cases cannot burst past per-minute limits. */
+class Semaphore {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+  constructor(private readonly limit: number) {}
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    this.active += 1;
     try {
-      return await operation();
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.waiting.shift()?.();
+    }
+  }
+}
+const pacer = new Semaphore(env.GEMINI_MAX_CONCURRENT_CALLS);
+
+/**
+ * Retries transient 5xx/network errors with backoff, and waits out short per-minute
+ * rate limits (up to 3 times). Daily quota errors are thrown immediately (DEC-019).
+ */
+export async function retry<T>(
+  operation: () => Promise<T>,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<T> {
+  let transientAttempts = 0;
+  let rateLimitWaits = 0;
+  for (;;) {
+    try {
+      return await pacer.run(operation);
     } catch (error) {
-      if (!isRetryable(error) || attempt >= 2) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 350 * 2 ** attempt));
+      const delay = shortRateLimitDelayMs(error);
+      if (delay !== undefined && rateLimitWaits < 3) {
+        rateLimitWaits += 1;
+        logger.warn({ waitMs: delay }, 'Gemini per-minute limit reached, waiting');
+        await wait(delay + 500 + Math.floor(Math.random() * 1500));
+        continue;
+      }
+      if (!isRetryable(error) || transientAttempts >= 2) throw error;
+      await wait(350 * 2 ** transientAttempts);
+      transientAttempts += 1;
     }
   }
 }
@@ -59,7 +114,7 @@ async function retry<T>(operation: () => Promise<T>): Promise<T> {
 export class GoogleGeminiSession implements GeminiSession {
   private readonly textClient: GoogleGenAI;
   private readonly imageClient: GoogleGenAI;
-  private readonly metrics: GeminiUsage = { textCalls: 0, inputTokens: 0, outputTokens: 0, images: 0 };
+  private readonly metrics: GeminiUsage = { textCalls: 0, inputTokens: 0, outputTokens: 0, images: 0, fallbacks: 0 };
 
   constructor(apiKey = env.GEMINI_API_KEY) {
     if (!apiKey) throw new Error('GEMINI_API_KEY is required when MOCK_GEMINI=false.');
@@ -67,10 +122,29 @@ export class GoogleGeminiSession implements GeminiSession {
     this.imageClient = new GoogleGenAI({ apiKey });
   }
 
+  /**
+   * Calls the requested model. If it is overloaded, times out, or its daily quota is
+   * exhausted, retries once on GEMINI_FALLBACK_MODEL (DEC-017, DEC-022).
+   */
   async generateJson(options: GenerateJsonOptions): Promise<unknown> {
+    try {
+      return await this.generateJsonWith(options.model, options);
+    } catch (error) {
+      const fallback = env.GEMINI_FALLBACK_MODEL;
+      if (!fallback || fallback === options.model || !(isOverloaded(error) || isGeminiQuotaError(error))) throw error;
+      this.metrics.fallbacks += 1;
+      logger.warn(
+        { model: options.model, fallback, reason: isOverloaded(error) ? 'overloaded' : 'daily_quota' },
+        'Gemini model unavailable, using fallback model',
+      );
+      return this.generateJsonWith(fallback, options);
+    }
+  }
+
+  private async generateJsonWith(model: string, options: GenerateJsonOptions): Promise<unknown> {
     return retry(async () => {
       const response = await this.textClient.models.generateContent({
-        model: options.model,
+        model,
         contents: options.prompt.user,
         config: {
           systemInstruction: options.prompt.system,
@@ -129,6 +203,18 @@ export function createGeminiSession(): GeminiSession {
   return new GoogleGeminiSession();
 }
 
+/** Turns a ZodError into short lines the model can act on, e.g. `items.1.content.messages: needs at least 8`. */
+export function describeValidationError(error: unknown): string {
+  if (typeof error === 'object' && error !== null && Array.isArray((error as { issues?: unknown }).issues)) {
+    const issues = (error as { issues: Array<{ path: Array<string | number>; message: string }> }).issues;
+    return issues
+      .slice(0, 8)
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+  }
+  return error instanceof Error ? error.message : 'Output did not match the required JSON schema.';
+}
+
 export async function generateStructured<T>(
   session: GeminiSession,
   input: Omit<GenerateJsonOptions, 'prompt'> & {
@@ -143,14 +229,14 @@ export async function generateStructured<T>(
       value = await session.generateJson({ ...input, prompt: input.buildPrompt(validationError) });
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
-      validationError = error instanceof Error ? error.message : 'Output did not match the required JSON schema.';
+      validationError = describeValidationError(error);
       if (attempt === 2) throw new Error(`Gemini output failed validation after three attempts: ${validationError}`);
       continue;
     }
     try {
       return schema.parse(value);
     } catch (error) {
-      validationError = error instanceof Error ? error.message : 'Output did not match the required JSON schema.';
+      validationError = describeValidationError(error);
       if (attempt === 2) throw new Error(`Gemini output failed validation after three attempts: ${validationError}`);
     }
   }

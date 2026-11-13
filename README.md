@@ -2,7 +2,7 @@
 
 Type a one-line scenario and get a complete, solvable fictional mystery: suspects, a hidden truth with exactly one culprit, and evidence such as WhatsApp chats, CCTV frames, photos, call logs, emails and documents. Investigate, then accuse.
 
-> **Status:** in development. Phase A (foundation) is complete. See [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md) for the roadmap and [`spec.md`](spec.md) for the full specification.
+> **Status:** in development. Phases A (foundation) and B (real Gemini generation) are complete. See [`docs/PROJECT_AUDIT.md`](docs/PROJECT_AUDIT.md) for the roadmap and [`spec.md`](spec.md) for the full specification.
 
 ## Stack
 
@@ -49,6 +49,13 @@ sed -i '' "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" server/.env
 
 The defaults use local MongoDB and **mock mode** (`MOCK_GEMINI=true`), so no API key is needed.
 
+To generate real AI cases, get a key at https://aistudio.google.com/apikey, then in `server/.env` set `GEMINI_API_KEY=<your key>` and `MOCK_GEMINI=false`, and restart `npm run dev`. A case takes about 1-2 minutes and roughly 5-8 AI calls on the free tier. Model names change often; list the ones your key can use with:
+
+```bash
+curl -s -H "x-goog-api-key: $(grep ^GEMINI_API_KEY= server/.env | cut -d= -f2-)" \
+  "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200" | grep '"name"'
+```
+
 ### 4. Run
 
 ```bash
@@ -75,21 +82,26 @@ Stop with `Ctrl+C`. To stop MongoDB: `brew services stop mongodb/brew/mongodb-co
 
 ### Server (`server/.env`)
 
-| Variable                                                            | Default                                                          | Notes                                                                          |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `PORT`                                                              | `5050`                                                           | 5000 is taken by macOS AirPlay Receiver                                        |
-| `MONGODB_URI`                                                       | `mongodb://127.0.0.1:27017/ai-mystery-room`                      | Atlas: `mongodb+srv://<user>:<password>@<host>/ai-mystery-room`                |
-| `JWT_SECRET`                                                        | —                                                                | **Required**, 32+ random characters                                            |
-| `CLIENT_ORIGIN`                                                     | `http://localhost:5173`                                          | Only origin allowed by CORS                                                    |
-| `COOKIE_SECURE`                                                     | `false`                                                          | Forced on when `NODE_ENV=production`                                           |
-| `MOCK_GEMINI`                                                       | `true` in example                                                | `true` = deterministic fixture cases, no API calls                             |
-| `GEMINI_API_KEY`                                                    | empty                                                            | Required only when `MOCK_GEMINI=false`. Server-only, never sent to the browser |
-| `GEMINI_TEXT_MODEL`, `GEMINI_VALIDATOR_MODEL`, `GEMINI_IMAGE_MODEL` | `gemini-2.5-flash`, `gemini-2.5-flash`, `gemini-2.5-flash-image` | Verify current names in Google's docs                                          |
-| `STORAGE_DRIVER`, `STORAGE_LOCAL_DIR`                               | `local`, `./storage`                                             | Generated images                                                               |
-| `GENERATION_CONCURRENCY`                                            | `2`                                                              | Parallel case generations                                                      |
-| `MAX_GENERATIONS_PER_DAY_USER` / `_GUEST`                           | `10` / `3`                                                       | Per-user daily limits                                                          |
-| `RATE_LIMIT_*`                                                      | see `server/src/config/env.ts`                                   | Per-IP limits (global, polling, auth, generation)                              |
-| `LOG_LEVEL`                                                         | `info` (`silent` in tests)                                       | pino level                                                                     |
+| Variable                                       | Default                                     | Notes                                                                                       |
+| ---------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `PORT`                                         | `5050`                                      | 5000 is taken by macOS AirPlay Receiver                                                     |
+| `MONGODB_URI`                                  | `mongodb://127.0.0.1:27017/ai-mystery-room` | Atlas: `mongodb+srv://<user>:<password>@<host>/ai-mystery-room`                             |
+| `JWT_SECRET`                                   | —                                           | **Required**, 32+ random characters                                                         |
+| `CLIENT_ORIGIN`                                | `http://localhost:5173`                     | Only origin allowed by CORS                                                                 |
+| `COOKIE_SECURE`                                | `false`                                     | Forced on when `NODE_ENV=production`                                                        |
+| `MOCK_GEMINI`                                  | `true` in example                           | `true` = deterministic fixture cases, no API calls                                          |
+| `GEMINI_API_KEY`                               | empty                                       | Required only when `MOCK_GEMINI=false`. Server-only, never sent to the browser              |
+| `GEMINI_TEXT_MODEL` / `GEMINI_VALIDATOR_MODEL` | `gemini-3.5-flash`                          | Blueprint writer / blind solvability check                                                  |
+| `GEMINI_FAST_MODEL`                            | `gemini-3.5-flash-lite`                     | Evidence writing and seed safety screening                                                  |
+| `GEMINI_FALLBACK_MODEL`                        | `gemini-3.5-flash-lite`                     | Used once when a model is overloaded or times out                                           |
+| `GEMINI_TEXT_TIMEOUT_MS`                       | `120000`                                    | Per-call timeout                                                                            |
+| `ENABLE_IMAGE_GENERATION`                      | `false`                                     | AI portraits, photos and CCTV frames. Needs a billing-enabled key (free tier: 0 images/day) |
+| `GEMINI_IMAGE_MODEL`                           | `gemini-nano-banana-2.1`                    | Only used when images are enabled                                                           |
+| `STORAGE_DRIVER`, `STORAGE_LOCAL_DIR`          | `local`, `./storage`                        | Generated images                                                                            |
+| `GENERATION_CONCURRENCY`                       | `2`                                         | Parallel case generations                                                                   |
+| `MAX_GENERATIONS_PER_DAY_USER` / `_GUEST`      | `10` / `3`                                  | Per-user daily limits                                                                       |
+| `RATE_LIMIT_*`                                 | see `server/src/config/env.ts`              | Per-IP limits (global, polling, auth, generation)                                           |
+| `LOG_LEVEL`                                    | `info` (`silent` in tests)                  | pino level                                                                                  |
 
 ### Client (`client/.env`)
 

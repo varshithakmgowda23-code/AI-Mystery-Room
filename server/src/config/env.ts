@@ -17,9 +17,17 @@ const EnvSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   GEMINI_API_KEY: z.string().default(''),
-  GEMINI_TEXT_MODEL: z.string().default('gemini-2.5-flash'),
-  GEMINI_VALIDATOR_MODEL: z.string().default('gemini-2.5-flash'),
-  GEMINI_IMAGE_MODEL: z.string().default('gemini-2.5-flash-image'),
+  GEMINI_TEXT_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_FAST_MODEL: z.string().default('gemini-3.5-flash-lite'),
+  GEMINI_FALLBACK_MODEL: z.string().default('gemini-3.5-flash-lite'),
+  GEMINI_MAX_CONCURRENT_CALLS: z.coerce.number().int().min(1).max(20).default(3),
+  GEMINI_TEXT_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(300_000).default(120_000),
+  GEMINI_VALIDATOR_MODEL: z.string().default('gemini-3.5-flash'),
+  GEMINI_IMAGE_MODEL: z.string().default('gemini-nano-banana-2.1'),
+  ENABLE_IMAGE_GENERATION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   MOCK_GEMINI: z
     .enum(['true', 'false'])
     .default('false')

@@ -26,6 +26,9 @@ const TruthSchema = z
   })
   .strict();
 
+export const EVIDENCE_TYPES = ['chat', 'image', 'cctv', 'document', 'call_log', 'email'] as const;
+export type EvidenceType = (typeof EVIDENCE_TYPES)[number];
+
 const ClueMapSchema = z
   .object({
     clueId: z.string().regex(/^c\d{1,2}$/),
@@ -34,6 +37,7 @@ const ClueMapSchema = z
       .regex(/^s[1-6]$/)
       .nullable(),
     kind: z.enum(['true_clue', 'red_herring', 'alibi', 'context']),
+    evidenceType: z.enum(EVIDENCE_TYPES),
     description: z.string().min(10).max(500),
   })
   .strict();
@@ -246,9 +250,10 @@ export const BlueprintJsonSchema = {
           clueId: { type: 'string' },
           pointsTo: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           kind: { type: 'string', enum: ['true_clue', 'red_herring', 'alibi', 'context'] },
+          evidenceType: { type: 'string', enum: [...EVIDENCE_TYPES] },
           description: { type: 'string' },
         },
-        required: ['clueId', 'pointsTo', 'kind', 'description'],
+        required: ['clueId', 'pointsTo', 'kind', 'evidenceType', 'description'],
       },
     },
     hints: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3 },
@@ -303,3 +308,12 @@ export const SafetyJsonSchema = {
   },
   required: ['safe', 'categories', 'userMessage'],
 };
+
+/** Several evidence items generated in one call so they share context (DEC-016). */
+export const EvidenceBatchJsonSchema = {
+  type: 'object',
+  properties: { items: { type: 'array', items: EvidenceJsonSchema } },
+  required: ['items'],
+};
+
+export const EvidenceBatchSchema = z.object({ items: z.array(EvidenceTextSchema).min(1).max(8) }).strict();

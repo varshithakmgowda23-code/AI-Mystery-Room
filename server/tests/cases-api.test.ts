@@ -229,4 +229,58 @@ describe('case generation API', () => {
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
   });
+
+  describe('POST /api/cases/:id/regenerate (API-13)', () => {
+    const url = '/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/regenerate';
+
+    it('re-queues a failed case for its owner', async () => {
+      modelState.caseRecord = { status: 'failed', failureCode: 'GENERATION_FAILED' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(202);
+      expect(response.body).toEqual({ caseId: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: 'queued' });
+      expect(modelState.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', userId: 'user-123' }),
+        expect.objectContaining({ $set: expect.objectContaining({ status: 'queued' }) }),
+      );
+    });
+
+    it('refuses to retry a case that did not fail', async () => {
+      modelState.caseRecord = { status: 'ready' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(400);
+    });
+
+    it('refuses to retry a content-policy rejection', async () => {
+      modelState.caseRecord = { status: 'failed', failureCode: 'CONTENT_POLICY' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(422);
+    });
+
+    it('waits until an AI quota reset time has passed', async () => {
+      modelState.caseRecord = {
+        status: 'failed',
+        failureCode: 'AI_QUOTA_EXCEEDED',
+        failureRetryAt: new Date(Date.now() + 60_000),
+      };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(429);
+      expect(response.body.error.retryAt).toBeDefined();
+    });
+
+    it('allows a retry when only a far-off daily quota reset is recorded', async () => {
+      modelState.caseRecord = {
+        status: 'failed',
+        failureCode: 'AI_QUOTA_EXCEEDED',
+        failureRetryAt: new Date(Date.now() + 10 * 60 * 60 * 1000),
+      };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(202);
+    });
+
+    it("returns 404 for another user's case", async () => {
+      modelState.caseRecord = null;
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(404);
+    });
+  });
 });

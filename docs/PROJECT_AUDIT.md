@@ -185,3 +185,5 @@ It's small, unblocks everything else, and fixes the security issue and two bugs 
 | Phase | Status | Verified |
 |---|---|---|
 | A: Hygiene & foundation | ✅ Done (2026-11-14) | S-1 scrubbed (rotation is owner's job), S-2 helmet/rate limits/operator rejection, S-3 JSON 400/413, S-4 pino logging, S-5 fail-fast DB with reconnect, FR-03 upgrade fix, `/status` accepts `in_progress`/`resolved`, Prettier, CI, README, client `.env.example`, local MongoDB, Playwright smoke (desktop + mobile) green, full guest → case → ready → upgrade flow against real MongoDB |
+| B: Real Gemini integration | ✅ Done (2026-11-14) | Spec M4 acceptance: 5 consecutive real generations (easy, medium, medium, hard, easy) reached `ready`, each passing the blind validator on the first attempt with 4-7 AI calls and 64-93 s per case; 2 further real cases also ready. Free-tier limits found and handled: 0 images/day (images opt-in, DEC-015), 20 requests/day on `gemini-3.5-flash` (fallback, DEC-022), per-minute limits (waits + pacer). Evidence batching, typed clue plan, case-local timestamps, regenerate endpoint (API-13) with retry button. |
+

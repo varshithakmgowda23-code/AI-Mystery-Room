@@ -5,20 +5,27 @@ import { createGeminiSession, generateStructured, type GeminiSession } from './g
 import {
   BlueprintJsonSchema,
   BlueprintSchema,
-  EvidenceJsonSchema,
-  EvidenceTextSchema,
+  EvidenceBatchJsonSchema,
+  EvidenceBatchSchema,
   ValidatorJsonSchema,
   ValidatorResultSchema,
   type Blueprint,
   type EvidenceText,
   type ValidatorResult,
 } from './gemini/schemas.js';
-import { buildBlueprintPrompt } from './gemini/prompts/blueprint.prompt.js';
-import { buildEvidencePrompt } from './gemini/prompts/evidence.prompt.js';
+import { buildBlueprintPrompt, DIFFICULTY_PLAN, PROMPT_VERSION } from './gemini/prompts/blueprint.prompt.js';
+import { buildEvidenceBatchPrompt } from './gemini/prompts/evidence.prompt.js';
 import { buildValidatorPrompt } from './gemini/prompts/validator.prompt.js';
 import { getStorageDriver, type StorageDriver } from './storage/index.js';
 import { classifyGeminiError, isGeminiQuotaError } from './gemini/errors.js';
 import { logger } from '../utils/logger.js';
+
+/** Evidence items generated per Gemini call (DEC-016). */
+export const EVIDENCE_BATCH_SIZE = 5;
+const PLACEHOLDER_PORTRAIT = '/media/portrait-placeholder.svg';
+const PLACEHOLDER_EVIDENCE = '/media/evidence-placeholder.svg';
+
+export type RealGenerationOptions = { generateImages?: boolean };
 
 class CaseValidationError extends Error {
   constructor(message: string) {
@@ -53,8 +60,7 @@ function countBy<T extends string>(values: T[]): Map<T, number> {
 }
 
 function validateBlueprint(blueprint: Blueprint, difficulty: Difficulty): void {
-  const expectedSuspects = difficulty === 'easy' ? 4 : difficulty === 'medium' ? 5 : 6;
-  const expectedEvidence = difficulty === 'easy' ? 8 : difficulty === 'medium' ? 11 : 14;
+  const { suspects: expectedSuspects, evidence: expectedEvidence } = DIFFICULTY_PLAN[difficulty];
   const suspects = blueprint.suspects;
   const names = new Set(suspects.map((suspect) => suspect.name.trim().toLocaleLowerCase()));
   if (suspects.length !== expectedSuspects || blueprint.clueMap.length !== expectedEvidence)
@@ -75,8 +81,7 @@ function validateBlueprint(blueprint: Blueprint, difficulty: Difficulty): void {
   const redHerrings = blueprint.clueMap.filter(
     (clue) => clue.kind === 'red_herring' && clue.pointsTo !== null && clue.pointsTo !== blueprint.truth.culpritId,
   );
-  const requiredTrueClues = difficulty === 'hard' ? 4 : 3;
-  const requiredRedHerrings = difficulty === 'hard' ? 3 : 2;
+  const { trueClues: requiredTrueClues, redHerrings: requiredRedHerrings } = DIFFICULTY_PLAN[difficulty];
   if (trueClues.length < requiredTrueClues || redHerrings.length < requiredRedHerrings)
     throw new CaseValidationError('The clue plan needs more independent culprit clues or red herrings.');
   if (
@@ -100,13 +105,25 @@ function validateBlueprint(blueprint: Blueprint, difficulty: Difficulty): void {
     blueprint.briefing.trim().split(/\s+/).length > 160
   )
     throw new CaseValidationError('The briefing must be 80–160 words.');
+  const plannedTypes = countBy(blueprint.clueMap.map((clue) => clue.evidenceType));
+  if (
+    (plannedTypes.get('chat') ?? 0) < 2 ||
+    (plannedTypes.get('image') ?? 0) < 2 ||
+    (plannedTypes.get('cctv') ?? 0) < 1 ||
+    (plannedTypes.get('document') ?? 0) < 1
+  )
+    throw new CaseValidationError(
+      'The clueMap evidenceType mix needs at least 2 chat, 2 image, 1 cctv and 1 document items.',
+    );
   const culprit = suspects.find((suspect) => suspect.id === blueprint.truth.culpritId);
   if (culprit && blueprint.hints.some((hint) => hint.toLocaleLowerCase().includes(culprit.name.toLocaleLowerCase())))
     throw new CaseValidationError('Hints must never name the culprit.');
 }
 
 function validateEvidence(evidence: EvidenceText[], blueprint: Blueprint, difficulty: Difficulty): void {
-  const expectedCount = difficulty === 'easy' ? 8 : difficulty === 'medium' ? 11 : 14;
+  const expectedCount = DIFFICULTY_PLAN[difficulty].evidence;
+  if (evidence.some((item, index) => item.type !== blueprint.clueMap[index]?.evidenceType))
+    throw new CaseValidationError('Each evidence item must use the type planned in the clueMap.');
   const typeCounts = countBy(evidence.map((item) => item.type));
   if (evidence.length !== expectedCount)
     throw new CaseValidationError('Evidence count does not match the selected difficulty.');
@@ -321,7 +338,7 @@ async function makeBlueprint(
         buildPrompt: (error) => buildBlueprintPrompt(seed, difficulty, tone, error ?? validationError),
         jsonSchema: BlueprintJsonSchema,
         temperature: 0.9,
-        timeoutMs: 60_000,
+        timeoutMs: env.GEMINI_TEXT_TIMEOUT_MS,
       },
       BlueprintSchema,
     );
@@ -336,74 +353,156 @@ async function makeBlueprint(
   throw new CaseValidationError('Blueprint failed validation.');
 }
 
+const ISO_WITH_ZONE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(?:Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * Evidence times are case-local wall-clock times (DEC-018). Models pick arbitrary UTC
+ * offsets per batch, so keep the clock time and rewrite every offset to +00:00.
+ */
+export function normalizeCaseTimestamps<T>(value: T): T {
+  if (typeof value === 'string') {
+    const match = ISO_WITH_ZONE.exec(value);
+    return (match ? `${match[1]}+00:00` : value) as T;
+  }
+  if (Array.isArray(value)) return value.map((item) => normalizeCaseTimestamps(item)) as T;
+  if (typeof value === 'object' && value !== null)
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalizeCaseTimestamps(child)])) as T;
+  return value;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+/** Generates evidence in batches; every batch sees the full hidden plan (DEC-016). */
+async function makeEvidence(
+  session: GeminiSession,
+  blueprint: Blueprint,
+  difficulty: Difficulty,
+  tone: Tone,
+): Promise<EvidenceText[]> {
+  const batches = chunk(blueprint.clueMap, EVIDENCE_BATCH_SIZE);
+  const results = await mapWithLimit(batches, 3, (batch) =>
+    generateStructured(
+      session,
+      {
+        model: env.GEMINI_FAST_MODEL,
+        buildPrompt: (error) => buildEvidenceBatchPrompt(blueprint, batch, difficulty, tone, error),
+        jsonSchema: EvidenceBatchJsonSchema,
+        temperature: 0.7,
+        timeoutMs: env.GEMINI_TEXT_TIMEOUT_MS,
+      },
+      {
+        parse(value: unknown): EvidenceText[] {
+          const { items } = EvidenceBatchSchema.parse(value);
+          if (items.length !== batch.length)
+            throw new Error(`Return exactly ${batch.length} items; you returned ${items.length}.`);
+          const wrong = items.findIndex((item, index) => item.type !== batch[index].evidenceType);
+          if (wrong >= 0)
+            throw new Error(
+              `Item ${wrong + 1} must have type "${batch[wrong].evidenceType}", not "${items[wrong].type}".`,
+            );
+          return items;
+        },
+      },
+    ),
+  );
+  return normalizeCaseTimestamps(results.flat());
+}
+
+/** Free-tier keys cannot generate images: use styled placeholders and keep the text (DEC-015). */
+function applyPlaceholderMedia(evidence: Array<Record<string, unknown>>, suspects: Array<Record<string, unknown>>) {
+  for (const suspect of suspects) suspect.portraitPath = PLACEHOLDER_PORTRAIT;
+  for (const item of evidence) {
+    const content = item.content as Record<string, unknown>;
+    if (item.type === 'image') {
+      delete content.imagePrompt;
+      content.imageUrl = PLACEHOLDER_EVIDENCE;
+      item.mediaStatus = 'placeholder';
+    }
+    if (item.type === 'cctv' && Array.isArray(content.frames)) {
+      content.frames = content.frames.map((frame) => {
+        const visible = { ...(frame as Record<string, unknown>) };
+        delete visible.imagePrompt;
+        visible.imageUrl = PLACEHOLDER_EVIDENCE;
+        return visible;
+      });
+      item.mediaStatus = 'placeholder';
+    }
+  }
+}
+
+function isRetryableValidation(error: unknown): boolean {
+  return (
+    error instanceof CaseValidationError || (error instanceof Error && error.message.includes('failed validation'))
+  );
+}
+
 export async function generateRealCase(
   caseId: string,
   session: GeminiSession = createGeminiSession(),
   storage: StorageDriver = getStorageDriver(),
+  options: RealGenerationOptions = {},
 ): Promise<void> {
+  const generateImages = options.generateImages ?? env.ENABLE_IMAGE_GENERATION;
   const caseDoc = await CaseModel.findById(caseId);
   if (!caseDoc) return;
   const difficulty = caseDoc.difficulty as Difficulty;
   const tone = caseDoc.tone as Tone;
   const storedFiles: string[] = [];
+  const progress = (stage: string, percent: number) =>
+    CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage, percent } } });
   let lastValidationError: string | undefined;
+  // When only the evidence stage fails, the next attempt keeps the blueprint (spec FR-13, Stage 4).
+  let blueprint: Blueprint | undefined;
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await cleanupMedia(storage, storedFiles);
       await CaseModel.updateOne(
         { _id: caseId },
         {
-          $set: { status: 'generating', generationAttempts: attempt + 1, progress: { stage: 'blueprint', percent: 5 } },
+          $set: {
+            status: 'generating',
+            generationAttempts: attempt + 1,
+            progress: { stage: 'blueprint', percent: blueprint ? 25 : 5 },
+          },
         },
       );
-      const blueprint = await makeBlueprint(session, caseDoc.seed, difficulty, tone, lastValidationError);
-      await CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage: 'blueprint', percent: 25 } } });
+      blueprint ??= await makeBlueprint(session, caseDoc.seed, difficulty, tone, lastValidationError);
+      const plan = blueprint;
+      await progress('evidence', 30);
 
-      await CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage: 'evidence', percent: 30 } } });
       let evidenceTexts: EvidenceText[];
       try {
-        evidenceTexts = await mapWithLimit(blueprint.clueMap, 3, async (clue) =>
-          generateStructured(
-            session,
-            {
-              model: env.GEMINI_TEXT_MODEL,
-              buildPrompt: () => buildEvidencePrompt(blueprint, clue, difficulty, tone),
-              jsonSchema: EvidenceJsonSchema,
-              temperature: 0.7,
-              timeoutMs: 60_000,
-            },
-            EvidenceTextSchema,
-          ),
-        );
-        validateEvidence(evidenceTexts, blueprint, difficulty);
+        evidenceTexts = await makeEvidence(session, plan, difficulty, tone);
+        validateEvidence(evidenceTexts, plan, difficulty);
       } catch (error) {
-        if (
-          error instanceof CaseValidationError ||
-          (error instanceof Error && error.message.includes('failed validation'))
-        ) {
-          lastValidationError = error instanceof Error ? error.message : 'Evidence failed validation.';
-          if (attempt < 2) continue;
-          throw new CaseValidationError(lastValidationError);
-        }
-        throw error;
+        if (!isRetryableValidation(error)) throw error;
+        lastValidationError = error instanceof Error ? error.message : 'Evidence failed validation.';
+        logger.warn({ caseId, attempt, reason: lastValidationError }, 'evidence failed validation');
+        if (attempt < 2) continue;
+        throw new CaseValidationError(lastValidationError);
       }
       const evidence: Array<Record<string, unknown>> = evidenceTexts.map((item, index) => ({
         ...item,
         id: `e${index + 1}`,
-        clueId: blueprint.clueMap[index].clueId,
-        pointsTo: blueprint.clueMap[index].pointsTo,
-        kind: blueprint.clueMap[index].kind,
+        clueId: plan.clueMap[index].clueId,
+        pointsTo: plan.clueMap[index].pointsTo,
+        kind: plan.clueMap[index].kind,
         mediaStatus: 'ok',
       }));
-      await CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage: 'evidence', percent: 55 } } });
+      await progress('evidence', 55);
 
-      const suspects: Array<Record<string, unknown>> = blueprint.suspects.map((suspect) => ({
+      const suspects: Array<Record<string, unknown>> = plan.suspects.map((suspect) => ({
         ...suspect,
         portraitPath: '',
       }));
-      await CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage: 'media', percent: 55 } } });
-      await generateMedia(caseId, evidence, suspects, session, storage, storedFiles);
-      await CaseModel.updateOne({ _id: caseId }, { $set: { progress: { stage: 'validation', percent: 90 } } });
+      await progress('media', 55);
+      if (generateImages) await generateMedia(caseId, evidence, suspects, session, storage, storedFiles);
+      else applyPlaceholderMedia(evidence, suspects);
+      await progress('validation', 90);
 
       let validator: ValidatorResult;
       try {
@@ -411,37 +510,33 @@ export async function generateRealCase(
           session,
           {
             model: env.GEMINI_VALIDATOR_MODEL,
-            buildPrompt: () => buildValidatorPrompt(makeValidatorCase(blueprint, evidenceTexts), difficulty, tone),
+            buildPrompt: () => buildValidatorPrompt(makeValidatorCase(plan, evidenceTexts), difficulty, tone),
             jsonSchema: ValidatorJsonSchema,
             temperature: 0.1,
-            timeoutMs: 60_000,
+            timeoutMs: env.GEMINI_TEXT_TIMEOUT_MS,
           },
           ValidatorResultSchema,
         );
+        checkBlindValidation(validator, plan, evidenceTexts);
       } catch (error) {
-        if (error instanceof Error && error.message.includes('failed validation')) {
-          lastValidationError = error.message;
-          if (attempt < 2) continue;
-          throw new CaseValidationError(lastValidationError);
-        }
-        throw error;
-      }
-      try {
-        checkBlindValidation(validator, blueprint, evidenceTexts);
-      } catch (error) {
+        if (!isRetryableValidation(error)) throw error;
         lastValidationError = error instanceof Error ? error.message : 'Blind validation failed.';
-        if (attempt === 2) throw new CaseValidationError(lastValidationError);
-        continue;
+        logger.warn({ caseId, attempt, reason: lastValidationError }, 'case failed blind validation');
+        // The plan itself may be unsolvable: regenerate from Stage 1.
+        blueprint = undefined;
+        if (attempt < 2) continue;
+        throw new CaseValidationError(lastValidationError);
       }
 
       const hidden = {
-        truth: blueprint.truth,
-        clueMap: blueprint.clueMap,
-        hints: blueprint.hints,
+        truth: plan.truth,
+        clueMap: plan.clueMap,
+        hints: plan.hints,
         validationReport: {
           mode: 'gemini',
           passed: true,
           checkedAt: new Date().toISOString(),
+          media: generateImages ? 'generated' : 'disabled',
           validator,
           supportingTrueClues: validator.supportingEvidenceIds,
         },
@@ -452,23 +547,23 @@ export async function generateRealCase(
           $set: {
             status: 'ready',
             progress: { stage: 'complete', percent: 100 },
-            title: blueprint.title,
-            setting: blueprint.setting,
-            briefing: blueprint.briefing,
+            title: plan.title,
+            setting: plan.setting,
+            briefing: plan.briefing,
             suspects,
             evidence,
             hidden,
-            promptVersion: '1.0.0',
+            promptVersion: PROMPT_VERSION,
           },
         },
       );
-      logger.info({ event: 'case_generation_cost', caseId, ...session.usage() }, 'case generation cost');
+      logger.info({ event: 'case_generation_cost', caseId, attempts: attempt + 1, ...session.usage() }, 'case ready');
       return;
     }
     throw new CaseValidationError(lastValidationError ?? 'Case validation failed after three attempts.');
   } catch (error) {
     await cleanupMedia(storage, storedFiles);
-    logger.info({ event: 'case_generation_cost', caseId, failed: true, ...session.usage() }, 'case generation cost');
+    logger.info({ event: 'case_generation_cost', caseId, failed: true, ...session.usage() }, 'case generation failed');
     throw error;
   }
 }

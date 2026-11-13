@@ -29,11 +29,11 @@ export async function screenSeed(seed: string): Promise<SafetyResult> {
     return await generateStructured(
       session,
       {
-        model: env.GEMINI_VALIDATOR_MODEL,
+        model: env.GEMINI_FAST_MODEL,
         buildPrompt: () => buildSafetyPrompt(seed),
         jsonSchema: SafetyJsonSchema,
         temperature: 0.1,
-        timeoutMs: 60_000,
+        timeoutMs: env.GEMINI_TEXT_TIMEOUT_MS,
       },
       SafetyResultSchema,
     );

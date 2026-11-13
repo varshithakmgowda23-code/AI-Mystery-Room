@@ -62,3 +62,52 @@ describe('Gemini structured output handling', () => {
     expect(isRetryableGeminiError({ status: 401 })).toBe(false);
   });
 });
+
+describe('Gemini model fallback detection', () => {
+  it('treats 5xx, gateway deadlines and our own timeouts as overloaded, but not quota errors', async () => {
+    const { isOverloaded } = await import('../src/services/gemini/client.js');
+    expect(isOverloaded({ status: 503 })).toBe(true);
+    expect(
+      isOverloaded(new Error('{"error":{"code":504,"message":"Deadline expired","status":"DEADLINE_EXCEEDED"}}')),
+    ).toBe(true);
+    expect(isOverloaded(Object.assign(new Error('timed out'), { name: 'TimeoutError' }))).toBe(true);
+    expect(isOverloaded({ status: 429, message: 'Rate limit exceeded' })).toBe(false);
+    expect(isOverloaded(new Error('Invalid argument'))).toBe(false);
+  });
+});
+
+describe('Gemini retry policy', () => {
+  it('waits out a per-minute 429 and then succeeds', async () => {
+    const { retry } = await import('../src/services/gemini/client.js');
+    const waits: number[] = [];
+    let calls = 0;
+    const result = await retry(
+      async () => {
+        calls += 1;
+        if (calls === 1)
+          throw Object.assign(
+            new Error(
+              JSON.stringify({
+                error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'limit', details: [{ retryDelay: '12s' }] },
+              }),
+            ),
+            { status: 429 },
+          );
+        return 'ok';
+      },
+      async (ms) => waits.push(ms),
+    );
+    expect(result).toBe('ok');
+    expect(waits[0]).toBeGreaterThanOrEqual(12_000);
+  });
+
+  it('turns schema issues into short field-level feedback for the model', async () => {
+    const { describeValidationError } = await import('../src/services/gemini/client.js');
+    const { z } = await import('zod');
+    const parsed = z.object({ items: z.array(z.object({ messages: z.array(z.string()).min(8) })) }).safeParse({
+      items: [{ messages: ['a'] }],
+    });
+    expect(parsed.success).toBe(false);
+    expect(describeValidationError(parsed.error)).toBe('items.0.messages: Array must contain at least 8 element(s)');
+  });
+});

@@ -17,3 +17,6 @@ casesRouter.post('/', generationLimiter, requireAuth, validateBody(CaseCreationS
 casesRouter.get('/:id/status', requireAuth, (request, response, next) => {
   void controller.status(request, response).catch(next);
 });
+casesRouter.post('/:id/regenerate', generationLimiter, requireAuth, (request, response, next) => {
+  void controller.regenerate(request, response).catch(next);
+});

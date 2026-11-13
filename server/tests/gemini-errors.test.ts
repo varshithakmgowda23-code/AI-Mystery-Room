@@ -59,3 +59,34 @@ describe('Gemini error mapping', () => {
     });
   });
 });
+
+describe('per-minute vs daily Gemini limits (DEC-019)', () => {
+  const rateError = (message: string, retryDelay?: string) =>
+    Object.assign(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message,
+            details: retryDelay ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] : [],
+          },
+        }),
+      ),
+      { status: 429 },
+    );
+
+  it('treats a short retry delay as a temporary rate limit', async () => {
+    const { shortRateLimitDelayMs } = await import('../src/services/gemini/errors.js');
+    const error = rateError('Quota exceeded for metric: generate_content_free_tier_requests, limit: 5', '41s');
+    expect(shortRateLimitDelayMs(error)).toBe(41_000);
+    expect(classifyGeminiError(error).code).toBe('AI_RATE_LIMITED');
+  });
+
+  it('never waits on a daily limit, even with a short delay', async () => {
+    const { shortRateLimitDelayMs } = await import('../src/services/gemini/errors.js');
+    const error = rateError('Quota exceeded: limit 0 requests per day on Free Tier', '20s');
+    expect(shortRateLimitDelayMs(error)).toBeUndefined();
+    expect(classifyGeminiError(error).code).toBe('AI_QUOTA_EXCEEDED');
+  });
+});

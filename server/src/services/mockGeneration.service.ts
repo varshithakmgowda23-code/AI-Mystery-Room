@@ -29,7 +29,13 @@ export interface MockCaseContent {
       timeline: Array<{ time: string; event: string }>;
       explanation: string;
     };
-    clueMap: Array<{ clueId: string; pointsTo: string | null; kind: ClueKind; description: string }>;
+    clueMap: Array<{
+      clueId: string;
+      pointsTo: string | null;
+      kind: ClueKind;
+      evidenceType: MockEvidence['type'];
+      description: string;
+    }>;
     hints: [string, string, string];
     validationReport: { mode: 'mock'; passed: true; checkedAt: string; supportingClues: string[] };
   };
@@ -203,6 +209,7 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
 
   const clueMap = evidence.map((item) => ({
     clueId: item.clueId,
+    evidenceType: item.type,
     pointsTo: item.pointsTo,
     kind: item.kind,
     description:

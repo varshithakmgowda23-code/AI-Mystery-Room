@@ -82,6 +82,18 @@ export function formatRetryTime(value?: string): string | null {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(retryAt);
 }
 
+export async function regenerateCase(caseId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/cases/${caseId}/regenerate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (response.ok) return;
+  const result = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+  throw new Error(result.error?.message ?? 'Could not retry this case.');
+}
+
 export async function getCaseStatus(caseId: string): Promise<CaseProgress> {
   const response = await fetch(`${API_BASE}/cases/${caseId}/status`, { credentials: 'include' });
   const result = (await response.json()) as Omit<CaseProgress, 'error' | 'errorCode'> & {
@@ -374,6 +386,11 @@ function GeneratingPage() {
     refetchInterval: (query) =>
       isPlayable(query.state.data?.status) || query.state.data?.status === 'failed' ? false : 2000,
   });
+  const queryClient = useQueryClient();
+  const retry = useMutation({
+    mutationFn: () => regenerateCase(caseId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['case-status', caseId] }),
+  });
   useEffect(() => {
     if (status.data?.status === 'failed' && !status.data.errorCode && status.data.error === genericGenerationError) {
       void status.refetch();
@@ -408,9 +425,26 @@ function GeneratingPage() {
           <span>{status.data?.status?.toUpperCase() ?? 'QUEUED'}</span>
         </div>
         {status.data?.status === 'failed' && (
-          <Link className="form-submit inline-submit" to="/">
-            TRY ANOTHER CASE <span aria-hidden="true">↗</span>
-          </Link>
+          <>
+            {status.data.errorCode !== 'CONTENT_POLICY' && (
+              <button
+                type="button"
+                className="form-submit inline-submit"
+                onClick={() => retry.mutate()}
+                disabled={retry.isPending}
+              >
+                {retry.isPending ? 'REOPENING…' : 'RETRY THIS CASE'} <span aria-hidden="true">↻</span>
+              </button>
+            )}
+            <Link className="back-link" to="/">
+              ← Try a different case
+            </Link>
+            {retry.error && (
+              <p className="form-error" role="alert">
+                {retry.error.message}
+              </p>
+            )}
+          </>
         )}
         {status.error && (
           <p className="form-error" role="alert">

@@ -104,6 +104,24 @@ function retryDelaySeconds(records: ErrorRecord[]): number | undefined {
   return undefined;
 }
 
+const DAILY_LIMIT = /per ?day|daily|PerDay/i;
+
+/**
+ * For a short-term (per-minute) Gemini rate limit, returns how long to wait in ms.
+ * Daily quota exhaustion returns undefined so callers fail fast (DEC-019).
+ */
+export function shortRateLimitDelayMs(error: unknown, maxSeconds = 70): number | undefined {
+  const records = errorRecords(error);
+  const status = numericStatus(records);
+  const code = apiCode(records);
+  if (status !== 429 && code !== 'RESOURCE_EXHAUSTED') return undefined;
+  const text = records.map((record) => (typeof record.message === 'string' ? record.message : '')).join(' ');
+  if (DAILY_LIMIT.test(text)) return undefined;
+  const seconds = retryDelaySeconds(records);
+  if (seconds === undefined) return /per ?minute|PerMinute/i.test(text) ? 30_000 : undefined;
+  return seconds <= maxSeconds ? Math.ceil(seconds * 1000) : undefined;
+}
+
 export function classifyGeminiError(error: unknown): UserFacingGenerationError {
   const records = errorRecords(error);
   const status = numericStatus(records);
@@ -115,6 +133,14 @@ export function classifyGeminiError(error: unknown): UserFacingGenerationError {
   const seconds = retryDelaySeconds(records);
   const retryAt = seconds === undefined ? undefined : new Date(Date.now() + seconds * 1000).toISOString();
 
+  const shortDelay = shortRateLimitDelayMs(error);
+  if (shortDelay !== undefined) {
+    return {
+      code: 'AI_RATE_LIMITED',
+      message: 'The AI service is receiving too many requests. Please wait a bit and try again.',
+      retryAt: new Date(Date.now() + shortDelay).toISOString(),
+    };
+  }
   if (status === 429 || code === 'RESOURCE_EXHAUSTED') {
     const exhausted = code === 'RESOURCE_EXHAUSTED' || /daily|per day|free.?tier|quota|exhausted/i.test(text);
     return {

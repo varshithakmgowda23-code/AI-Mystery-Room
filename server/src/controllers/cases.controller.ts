@@ -66,6 +66,69 @@ export function casesController(queue: JobQueue) {
       queue.enqueue(() => generateCase(caseId));
       response.status(202).json({ caseId, status: 'queued' });
     },
+    /** API-13: retry a failed generation (NFR-04 "with retry available"). */
+    regenerate: async (request: Request, response: Response): Promise<void> => {
+      const parsedId = CaseIdSchema.safeParse(request.params.id);
+      if (!parsedId.success) {
+        response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'The case ID is invalid.' } });
+        return;
+      }
+      const userId = response.locals.userId as string;
+      const caseDoc = await CaseModel.findOne({ _id: parsedId.data, userId });
+      if (!caseDoc) {
+        response.status(404).json({ error: { code: 'NOT_FOUND', message: 'That case could not be found.' } });
+        return;
+      }
+      if (caseDoc.status !== 'failed') {
+        response.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'Only a case whose generation failed can be retried.' },
+        });
+        return;
+      }
+      if (caseDoc.failureCode === 'CONTENT_POLICY') {
+        response.status(422).json({ error: { code: 'CONTENT_POLICY', message: CONTENT_POLICY_MESSAGE } });
+        return;
+      }
+      const retryAt = caseDoc.failureRetryAt ? new Date(caseDoc.failureRetryAt) : undefined;
+      // Only a short per-minute wait blocks a retry; a daily reset may be served by the fallback model (DEC-022).
+      const waitMs = retryAt ? retryAt.getTime() - Date.now() : 0;
+      if (retryAt && waitMs > 0 && waitMs <= 5 * 60 * 1000) {
+        response.status(429).json({
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'The AI service limit has not reset yet. Please try again later.',
+            retryAt: retryAt.toISOString(),
+          },
+        });
+        return;
+      }
+      const activeCount = await CaseModel.countDocuments({ userId, status: { $in: ['queued', 'generating'] } });
+      if (activeCount >= 2) {
+        response.status(429).json({
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'You already have two cases generating. Wait for one to finish before retrying.',
+          },
+        });
+        return;
+      }
+      // Conditional update so two simultaneous retries cannot both enqueue a job.
+      const update = await CaseModel.updateOne(
+        { _id: parsedId.data, userId, status: 'failed' },
+        {
+          $set: { status: 'queued', progress: { stage: 'queued', percent: 0 }, generationAttempts: 0 },
+          $unset: { failureCode: 1, failureReason: 1, failureRetryAt: 1 },
+        },
+      );
+      if (update.modifiedCount !== 1) {
+        response.status(400).json({
+          error: { code: 'VALIDATION_ERROR', message: 'Only a case whose generation failed can be retried.' },
+        });
+        return;
+      }
+      queue.enqueue(() => generateCase(parsedId.data));
+      response.status(202).json({ caseId: parsedId.data, status: 'queued' });
+    },
     status: async (request: Request, response: Response): Promise<void> => {
       const parsedId = CaseIdSchema.safeParse(request.params.id);
       if (!parsedId.success) {
