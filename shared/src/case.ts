@@ -80,7 +80,23 @@ export type CaseSolution = {
   clueBreakdown: Array<{ evidenceId: string; role: ClueRole; pointsTo: string | null; explanation: string }>;
 };
 
-export type CaseResult = { score: number; correct: boolean; culpritId: string; gaveUp: boolean };
+export type ScoreBreakdown = {
+  base: number;
+  hintPenalty: number;
+  wrongPenalty: number;
+  timeBonus: number;
+  multiplier: number;
+  elapsedMinutes: number;
+  score: number;
+};
+
+export type CaseResult = {
+  score: number;
+  correct: boolean;
+  culpritId: string;
+  gaveUp: boolean;
+  breakdown?: ScoreBreakdown;
+};
 
 export type Accusation = { suspectId: string; reasoning?: string; at: string; correct: boolean };
 
@@ -114,3 +130,42 @@ export type PlayerCaseView = {
 export const NotesSchema = z.object({ notes: z.string().max(10_000) }).strict();
 export const SuspectTagsSchema = z.object({ tags: z.record(z.string().regex(/^s[1-6]$/), SuspectTagSchema) }).strict();
 export const EvidenceIdSchema = z.string().regex(/^e\d{1,2}$/);
+
+export const AccuseSchema = z
+  .object({ suspectId: z.string().regex(/^s[1-6]$/), reasoning: z.string().trim().max(500).optional() })
+  .strict();
+export const ShareSchema = z.object({ enabled: z.boolean() }).strict();
+export const ShareTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
+
+/** POST /api/cases/:id/accuse (API-18). */
+export type AccuseResponse =
+  | { correct: false; resolved: false; attemptsRemaining: number; message: string }
+  | { correct: boolean; resolved: true; score: number; case: PlayerCaseView };
+
+/** GET /api/cases (API-11). */
+export type CaseListItem = {
+  id: string;
+  title: string;
+  difficulty: Difficulty;
+  tone: Tone;
+  status: CaseStatus;
+  createdAt: string;
+  score?: number;
+  correct?: boolean;
+  gaveUp?: boolean;
+  evidenceViewed?: number;
+  evidenceTotal?: number;
+};
+export type CaseListResponse = { items: CaseListItem[]; page: number; totalPages: number; total: number };
+
+/** GET /api/public/cases/:shareToken (API-21). Never includes evidence. */
+export type PublicCaseView = {
+  title: string;
+  difficulty: Difficulty;
+  setting: { location: string; date: string; timeframe: string };
+  briefing: string;
+  suspects: Array<{ id: string; name: string; role: string }>;
+  outcome: { correct: boolean; gaveUp: boolean; score: number; attemptsUsed: number; hintsUsed: number };
+  culprit: { name: string; role: string };
+  explanation: string;
+};

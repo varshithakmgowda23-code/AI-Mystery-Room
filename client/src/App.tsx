@@ -8,6 +8,8 @@ const AuthPage = lazy(() => import('./pages/AuthPage.js'));
 const CasesPage = lazy(() => import('./pages/CasesPage.js'));
 const GeneratingPage = lazy(() => import('./pages/GeneratingPage.js'));
 const CaseBoardPage = lazy(() => import('./pages/CaseBoardPage.js'));
+const VerdictPage = lazy(() => import('./pages/VerdictPage.js'));
+const SharePage = lazy(() => import('./pages/SharePage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
 
 function PageFallback() {
@@ -56,6 +58,15 @@ export default function App() {
             </RequireSession>
           }
         />
+        <Route
+          path="/cases/:caseId/verdict"
+          element={
+            <RequireSession>
+              <VerdictPage />
+            </RequireSession>
+          }
+        />
+        <Route path="/s/:shareToken" element={<SharePage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Suspense>

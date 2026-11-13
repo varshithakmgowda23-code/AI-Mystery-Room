@@ -43,3 +43,12 @@ Findings from a real free-tier key: `gemini-2.5-flash` (the spec's suggested def
 - **DEC-026 — Markdown documents:** `react-markdown` (added per spec §15.3) renders documents with `skipHtml` and no images or links. Single newlines are kept as line breaks because models format receipts and logs line by line.
 - **DEC-027 — Mobile board:** Below 1024 px the board uses tabs (Briefing / Suspects / Evidence / Notebook, spec §12.2); opening evidence shows the viewer alone with an "All evidence" back control. The selected item lives in the URL (`?e=e3`), so the browser back button and deep links work.
 - **DEC-028 — Isolated E2E:** Playwright starts its own API (port 5051, mock Gemini, `ai-mystery-room-e2e` database, rate limits off) and client (port 5174), so E2E never spends real AI quota or touches development data.
+
+## Phase D — Accusation, verdict, history, sharing (2026-11-14)
+
+- **DEC-029 — Concurrency-safe endgame:** Accusations and give-up use a conditional update on `state.attemptsUsed`, so a double click or two tabs cannot record two attempts for one; the losing request gets `409` with a "refresh and try again" message.
+- **DEC-030 — Wrong-guess messages:** Nudges rotate by attempt number from a fixed list and never depend on who was accused or who the culprit is (FR-22, §15.1).
+- **DEC-031 — Score breakdown stored:** `result.breakdown` (base, penalties, time bonus, multiplier, minutes) is saved at resolution so the verdict page shows exactly how the score was computed.
+- **DEC-032 — Share payload:** `POST /api/cases/:id/share` takes `{ enabled: boolean }` and returns `{ shareToken | null }` (22-character random token). The public view includes title, setting, briefing, suspect names and roles, the outcome, the culprit and the explanation, but never evidence or the player's identity.
+- **DEC-033 — Body-less DELETE:** The "mutating requests must be JSON" CSRF guard (§15.4) applies to POST, PUT and PATCH. DELETE carries no body; cross-site DELETEs are already blocked by the CORS preflight and the SameSite=Lax cookie.
+- **DEC-034 — Guest upgrade UI:** Guests see a "Keep your cases" form on My Cases (FR-03), since guest cases expire after 7 days.

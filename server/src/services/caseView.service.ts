@@ -4,6 +4,7 @@ import type {
   PlayerCaseView,
   PlayerEvidence,
   PlayerSuspect,
+  ScoreBreakdown,
   SuspectTag,
 } from '@ai-mystery-room/shared';
 
@@ -69,7 +70,13 @@ export type StoredCase = {
     startedAt?: Date | string;
     resolvedAt?: Date | string | null;
   } | null;
-  result?: { score: number; correct: boolean; culpritId: string; gaveUp?: boolean | null } | null;
+  result?: {
+    score: number;
+    correct: boolean;
+    culpritId: string;
+    gaveUp?: boolean | null;
+    breakdown?: ScoreBreakdown | null;
+  } | null;
   createdAt?: Date | string;
 };
 
@@ -220,6 +227,7 @@ export function toResolvedView(doc: StoredCase): PlayerCaseView {
             correct: doc.result.correct,
             culpritId: doc.result.culpritId,
             gaveUp: Boolean(doc.result.gaveUp),
+            ...(doc.result.breakdown ? { breakdown: doc.result.breakdown } : {}),
           },
         }
       : {}),

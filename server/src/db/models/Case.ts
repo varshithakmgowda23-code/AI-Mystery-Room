@@ -80,6 +80,7 @@ const resultSchema = new Schema(
     correct: { type: Boolean, required: true },
     culpritId: { type: String, required: true },
     gaveUp: { type: Boolean, default: false },
+    breakdown: { type: Schema.Types.Mixed },
   },
   { _id: false },
 );

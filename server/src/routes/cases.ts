@@ -1,7 +1,8 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { CaseCreationSchema, NotesSchema, SuspectTagsSchema } from '@ai-mystery-room/shared';
+import { AccuseSchema, CaseCreationSchema, NotesSchema, ShareSchema, SuspectTagsSchema } from '@ai-mystery-room/shared';
 import { casesController } from '../controllers/cases.controller.js';
 import { gameplayController } from '../controllers/gameplay.controller.js';
+import { endgameController } from '../controllers/endgame.controller.js';
 import { env } from '../config/env.js';
 import { InProcessJobQueue } from '../jobs/queue.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -38,3 +39,10 @@ casesRouter.patch(
 );
 casesRouter.post('/:id/evidence/:evidenceId/view', requireAuth, wrap(gameplayController.viewEvidence));
 casesRouter.post('/:id/hints', requireAuth, wrap(gameplayController.hint));
+
+// Endgame and history (API-11, API-12, API-18..20).
+casesRouter.get('/', requireAuth, wrap(endgameController.list));
+casesRouter.delete('/:id', requireAuth, wrap(endgameController.remove));
+casesRouter.post('/:id/accuse', requireAuth, validateBody(AccuseSchema), wrap(endgameController.accuse));
+casesRouter.post('/:id/reveal', requireAuth, wrap(endgameController.reveal));
+casesRouter.post('/:id/share', requireAuth, validateBody(ShareSchema), wrap(endgameController.share));

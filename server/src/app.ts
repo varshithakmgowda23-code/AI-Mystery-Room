@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.js';
 import { casesRouter } from './routes/cases.js';
 import { healthRouter } from './routes/health.js';
 import { mediaRouter } from './routes/media.js';
+import { publicRouter } from './routes/public.js';
 import { logger } from './utils/logger.js';
 
 export const app = express();
@@ -36,7 +37,7 @@ app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 app.use('/api/health', healthRouter);
 app.use('/api', (request, response, next) => {
-  if (request.method !== 'GET' && !request.is('application/json')) {
+  if (['POST', 'PUT', 'PATCH'].includes(request.method) && !request.is('application/json')) {
     response
       .status(400)
       .json({ error: { code: 'VALIDATION_ERROR', message: 'Mutating requests must use application/json.' } });
@@ -48,5 +49,6 @@ app.use('/api', rejectMongoOperators);
 app.use('/api/auth', authRouter);
 app.use('/api/cases', casesRouter);
 app.use('/api/media', mediaRouter);
+app.use('/api/public', publicRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);

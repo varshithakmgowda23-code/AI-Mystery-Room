@@ -1,4 +1,13 @@
-import type { CaseStatus, Difficulty, PlayerCaseView, SuspectTag, Tone } from '@ai-mystery-room/shared';
+import type {
+  AccuseResponse,
+  CaseListResponse,
+  CaseStatus,
+  Difficulty,
+  PlayerCaseView,
+  PublicCaseView,
+  SuspectTag,
+  Tone,
+} from '@ai-mystery-room/shared';
 import { API_BASE, request } from './http.js';
 
 export const PLAYABLE_STATUSES: readonly CaseStatus[] = ['ready', 'in_progress', 'resolved'];
@@ -53,6 +62,23 @@ export const markEvidenceViewed = (caseId: string, evidenceId: string) =>
 
 export const revealHint = (caseId: string) =>
   request<{ hint: string; hintsUsed: number; hintsAvailable: number }>(`/cases/${caseId}/hints`, { method: 'POST' });
+
+export const accuse = (caseId: string, suspectId: string, reasoning?: string) =>
+  request<AccuseResponse>(`/cases/${caseId}/accuse`, {
+    method: 'POST',
+    body: reasoning ? { suspectId, reasoning } : { suspectId },
+  });
+
+export const giveUp = (caseId: string) => request<PlayerCaseView>(`/cases/${caseId}/reveal`, { method: 'POST' });
+
+export const listCases = (page: number) => request<CaseListResponse>(`/cases?page=${page}`);
+
+export const deleteCase = (caseId: string) => request<{ deleted: true }>(`/cases/${caseId}`, { method: 'DELETE' });
+
+export const setSharing = (caseId: string, enabled: boolean) =>
+  request<{ shareToken: string | null }>(`/cases/${caseId}/share`, { method: 'POST', body: { enabled } });
+
+export const getPublicCase = (token: string) => request<PublicCaseView>(`/public/cases/${token}`);
 
 export type CaseProgress = {
   status: CaseStatus;
