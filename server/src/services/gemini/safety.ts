@@ -11,7 +11,8 @@ const DENYLIST = [
   /(?:kill|attack|stalk|harass).{0,50}(?:my|a real|specific) (?:classmate|coworker|neighbor|teacher|ex-partner)/i,
 ];
 
-export const CONTENT_POLICY_MESSAGE = 'Please choose a fictional, non-graphic mystery seed without real people, ongoing crimes, or instructions for real-world harm.';
+export const CONTENT_POLICY_MESSAGE =
+  'Please choose a fictional, non-graphic mystery seed without real people, ongoing crimes, or instructions for real-world harm.';
 
 export function isSeedOnDenylist(seed: string): boolean {
   return DENYLIST.some((pattern) => pattern.test(seed));
@@ -25,13 +26,17 @@ export async function screenSeed(seed: string): Promise<SafetyResult> {
 
   try {
     const session = createGeminiSession();
-    return await generateStructured(session, {
-      model: env.GEMINI_VALIDATOR_MODEL,
-      buildPrompt: () => buildSafetyPrompt(seed),
-      jsonSchema: SafetyJsonSchema,
-      temperature: 0.1,
-      timeoutMs: 60_000,
-    }, SafetyResultSchema);
+    return await generateStructured(
+      session,
+      {
+        model: env.GEMINI_FAST_MODEL,
+        buildPrompt: () => buildSafetyPrompt(seed),
+        jsonSchema: SafetyJsonSchema,
+        temperature: 0.1,
+        timeoutMs: env.GEMINI_TEXT_TIMEOUT_MS,
+      },
+      SafetyResultSchema,
+    );
   } catch (error) {
     if (isContentBlocked(error)) return { safe: false, categories: ['none'], userMessage: CONTENT_POLICY_MESSAGE };
     throw error;

@@ -58,8 +58,16 @@ function apiCode(records: ErrorRecord[]): string {
     }
   }
   const recognized = [
-    'RESOURCE_EXHAUSTED', 'UNAVAILABLE', 'SERVICE_UNAVAILABLE', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN',
-    'ENOTFOUND', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+    'RESOURCE_EXHAUSTED',
+    'UNAVAILABLE',
+    'SERVICE_UNAVAILABLE',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
   ];
   return values.find((value) => recognized.includes(value)) ?? values[0] ?? '';
 }
@@ -96,14 +104,43 @@ function retryDelaySeconds(records: ErrorRecord[]): number | undefined {
   return undefined;
 }
 
+const DAILY_LIMIT = /per ?day|daily|PerDay/i;
+
+/**
+ * For a short-term (per-minute) Gemini rate limit, returns how long to wait in ms.
+ * Daily quota exhaustion returns undefined so callers fail fast (DEC-019).
+ */
+export function shortRateLimitDelayMs(error: unknown, maxSeconds = 70): number | undefined {
+  const records = errorRecords(error);
+  const status = numericStatus(records);
+  const code = apiCode(records);
+  if (status !== 429 && code !== 'RESOURCE_EXHAUSTED') return undefined;
+  const text = records.map((record) => (typeof record.message === 'string' ? record.message : '')).join(' ');
+  if (DAILY_LIMIT.test(text)) return undefined;
+  const seconds = retryDelaySeconds(records);
+  if (seconds === undefined) return /per ?minute|PerMinute/i.test(text) ? 30_000 : undefined;
+  return seconds <= maxSeconds ? Math.ceil(seconds * 1000) : undefined;
+}
+
 export function classifyGeminiError(error: unknown): UserFacingGenerationError {
   const records = errorRecords(error);
   const status = numericStatus(records);
   const code = apiCode(records);
-  const text = records.map((record) => typeof record.message === 'string' ? record.message : '').join(' ').toLowerCase();
+  const text = records
+    .map((record) => (typeof record.message === 'string' ? record.message : ''))
+    .join(' ')
+    .toLowerCase();
   const seconds = retryDelaySeconds(records);
   const retryAt = seconds === undefined ? undefined : new Date(Date.now() + seconds * 1000).toISOString();
 
+  const shortDelay = shortRateLimitDelayMs(error);
+  if (shortDelay !== undefined) {
+    return {
+      code: 'AI_RATE_LIMITED',
+      message: 'The AI service is receiving too many requests. Please wait a bit and try again.',
+      retryAt: new Date(Date.now() + shortDelay).toISOString(),
+    };
+  }
   if (status === 429 || code === 'RESOURCE_EXHAUSTED') {
     const exhausted = code === 'RESOURCE_EXHAUSTED' || /daily|per day|free.?tier|quota|exhausted/i.test(text);
     return {
@@ -115,25 +152,51 @@ export function classifyGeminiError(error: unknown): UserFacingGenerationError {
     };
   }
   if (status === 503 || code === 'UNAVAILABLE' || code === 'SERVICE_UNAVAILABLE') {
-    return { code: 'AI_UNAVAILABLE', message: 'The AI model is temporarily unavailable. Please try again later.', ...(retryAt ? { retryAt } : {}) };
+    return {
+      code: 'AI_UNAVAILABLE',
+      message: 'The AI model is temporarily unavailable. Please try again later.',
+      ...(retryAt ? { retryAt } : {}),
+    };
   }
 
-  const networkCodes = ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET'];
-  if (networkCodes.includes(code) || /network error|fetch failed|socket hang up|connection (?:reset|refused|timed out)|dns/i.test(text)) {
-    return { code: 'AI_NETWORK_ERROR', message: 'Unable to connect to the AI service. Please try again when your connection is available.' };
+  const networkCodes = [
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
+  ];
+  if (
+    networkCodes.includes(code) ||
+    /network error|fetch failed|socket hang up|connection (?:reset|refused|timed out)|dns/i.test(text)
+  ) {
+    return {
+      code: 'AI_NETWORK_ERROR',
+      message: 'Unable to connect to the AI service. Please try again when your connection is available.',
+    };
   }
 
   return { code: 'GENERATION_FAILED', message: 'Something went wrong while generating the case.' };
 }
 
-export function classifyStoredGenerationError(failureCode: string | null | undefined, failureReason: string | null | undefined): UserFacingGenerationError {
+export function classifyStoredGenerationError(
+  failureCode: string | null | undefined,
+  failureReason: string | null | undefined,
+): UserFacingGenerationError {
   const message = failureReason ?? '';
   switch (failureCode) {
-    case 'AI_QUOTA_EXCEEDED': return classifyGeminiError({ status: 429, code: 'RESOURCE_EXHAUSTED', message });
-    case 'AI_RATE_LIMITED': return classifyGeminiError({ status: 429, code: 'RATE_LIMITED', message });
-    case 'AI_UNAVAILABLE': return classifyGeminiError({ status: 503, code: 'UNAVAILABLE', message });
-    case 'AI_NETWORK_ERROR': return classifyGeminiError({ code: 'ECONNRESET', message });
-    default: return classifyGeminiError(new Error(message));
+    case 'AI_QUOTA_EXCEEDED':
+      return classifyGeminiError({ status: 429, code: 'RESOURCE_EXHAUSTED', message });
+    case 'AI_RATE_LIMITED':
+      return classifyGeminiError({ status: 429, code: 'RATE_LIMITED', message });
+    case 'AI_UNAVAILABLE':
+      return classifyGeminiError({ status: 503, code: 'UNAVAILABLE', message });
+    case 'AI_NETWORK_ERROR':
+      return classifyGeminiError({ code: 'ECONNRESET', message });
+    default:
+      return classifyGeminiError(new Error(message));
   }
 }
 

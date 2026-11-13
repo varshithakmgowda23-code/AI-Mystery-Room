@@ -9,11 +9,13 @@ describe('shared foundation schemas', () => {
   });
 
   it('validates the API health payload', () => {
-    expect(HealthResponseSchema.safeParse({
-      status: 'degraded',
-      service: 'ai-mystery-room-api',
-      timestamp: new Date().toISOString(),
-      database: 'disconnected',
-    }).success).toBe(true);
+    expect(
+      HealthResponseSchema.safeParse({
+        status: 'degraded',
+        service: 'ai-mystery-room-api',
+        timestamp: new Date().toISOString(),
+        database: 'disconnected',
+      }).success,
+    ).toBe(true);
   });
 });

@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js';
+
 export interface JobQueue {
   enqueue(task: () => Promise<void>): void;
 }
@@ -18,12 +20,14 @@ export class InProcessJobQueue implements JobQueue {
       const task = this.waiting.shift();
       if (!task) return;
       this.active += 1;
-      void task().catch((error: unknown) => {
-        console.error('Background job failed:', error);
-      }).finally(() => {
-        this.active -= 1;
-        this.runNext();
-      });
+      void task()
+        .catch((error: unknown) => {
+          logger.error({ err: error }, 'Background job failed');
+        })
+        .finally(() => {
+          this.active -= 1;
+          this.runNext();
+        });
     }
   }
 }

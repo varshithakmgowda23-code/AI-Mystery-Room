@@ -3,14 +3,19 @@ import { classifyGeminiError, classifyStoredGenerationError } from '../src/servi
 
 describe('Gemini error mapping', () => {
   it('maps RESOURCE_EXHAUSTED quota errors to a safe message and extracts retry delay', () => {
-    const error = Object.assign(new Error(JSON.stringify({
-      error: {
-        code: 429,
-        status: 'RESOURCE_EXHAUSTED',
-        message: 'You exceeded your current quota.',
-        details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' }],
-      },
-    })), { status: 429 });
+    const error = Object.assign(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message: 'You exceeded your current quota.',
+            details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' }],
+          },
+        }),
+      ),
+      { status: 429 },
+    );
 
     const result = classifyGeminiError(error);
     expect(result.code).toBe('AI_QUOTA_EXCEEDED');
@@ -31,7 +36,9 @@ describe('Gemini error mapping', () => {
       code: 'AI_UNAVAILABLE',
       message: 'The AI model is temporarily unavailable. Please try again later.',
     });
-    expect(classifyGeminiError(Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET' } }))).toMatchObject({
+    expect(
+      classifyGeminiError(Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET' } })),
+    ).toMatchObject({
       code: 'AI_NETWORK_ERROR',
       message: 'Unable to connect to the AI service. Please try again when your connection is available.',
     });
@@ -50,5 +57,36 @@ describe('Gemini error mapping', () => {
       code: 'AI_UNAVAILABLE',
       message: 'The AI model is temporarily unavailable. Please try again later.',
     });
+  });
+});
+
+describe('per-minute vs daily Gemini limits (DEC-019)', () => {
+  const rateError = (message: string, retryDelay?: string) =>
+    Object.assign(
+      new Error(
+        JSON.stringify({
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message,
+            details: retryDelay ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] : [],
+          },
+        }),
+      ),
+      { status: 429 },
+    );
+
+  it('treats a short retry delay as a temporary rate limit', async () => {
+    const { shortRateLimitDelayMs } = await import('../src/services/gemini/errors.js');
+    const error = rateError('Quota exceeded for metric: generate_content_free_tier_requests, limit: 5', '41s');
+    expect(shortRateLimitDelayMs(error)).toBe(41_000);
+    expect(classifyGeminiError(error).code).toBe('AI_RATE_LIMITED');
+  });
+
+  it('never waits on a daily limit, even with a short delay', async () => {
+    const { shortRateLimitDelayMs } = await import('../src/services/gemini/errors.js');
+    const error = rateError('Quota exceeded: limit 0 requests per day on Free Tier', '20s');
+    expect(shortRateLimitDelayMs(error)).toBeUndefined();
+    expect(classifyGeminiError(error).code).toBe('AI_QUOTA_EXCEEDED');
   });
 });

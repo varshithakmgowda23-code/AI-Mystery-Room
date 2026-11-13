@@ -3,13 +3,22 @@ import { CaseIdSchema } from '@ai-mystery-room/shared';
 import { CaseModel } from '../db/models/Case.js';
 import { getStorageDriver } from '../services/storage/index.js';
 
-function containsFilename(caseDoc: { suspects: Array<{ portraitPath?: string | null }>; evidence: Array<{ content: unknown }> }, filename: string): boolean {
+function containsFilename(
+  caseDoc: { suspects: Array<{ portraitPath?: string | null }>; evidence: Array<{ content: unknown }> },
+  filename: string,
+): boolean {
   if (caseDoc.suspects.some((suspect) => suspect.portraitPath === filename)) return true;
   return caseDoc.evidence.some((item) => {
     if (typeof item.content !== 'object' || item.content === null) return false;
     const content = item.content as Record<string, unknown>;
     if (content.imageUrl === filename) return true;
-    return Array.isArray(content.frames) && content.frames.some((frame) => typeof frame === 'object' && frame !== null && (frame as Record<string, unknown>).imageUrl === filename);
+    return (
+      Array.isArray(content.frames) &&
+      content.frames.some(
+        (frame) =>
+          typeof frame === 'object' && frame !== null && (frame as Record<string, unknown>).imageUrl === filename,
+      )
+    );
   });
 }
 

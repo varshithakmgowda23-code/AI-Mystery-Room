@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatRetryTime, getCaseStatus } from './App.js';
+import { formatRetryTime, getCaseStatus } from './api/cases.js';
 
 function mockStatusResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body };
@@ -16,25 +16,30 @@ describe('case status client handling', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it.each(['queued', 'generating', 'ready', 'failed'] as const)(
-    'preserves the %s status returned by the status API', async (status) => {
+    'preserves the %s status returned by the status API',
+    async (status) => {
       const progress = { stage: status, percent: status === 'ready' ? 100 : 0, label: 'Preparing the case.' };
       fetchMock.mockResolvedValue(mockStatusResponse({ status, progress }));
 
       await expect(getCaseStatus('case-123')).resolves.toMatchObject({ status, progress });
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:5000/api/cases/case-123/status', { credentials: 'include' });
+      expect(fetchMock).toHaveBeenCalledWith('/api/cases/case-123/status', {
+        credentials: 'include',
+      });
     },
   );
 
   it('keeps quota errors structured, friendly, and includes an approximate retry time', async () => {
-    fetchMock.mockResolvedValue(mockStatusResponse({
-      status: 'failed',
-      progress: { stage: 'failed', percent: 0, label: 'Preparing the case.' },
-      error: {
-        code: 'AI_QUOTA_EXCEEDED',
-        message: 'Raw provider quota details must not be exposed.',
-        retryAt: '2026-11-05T08:00:01.018Z',
-      },
-    }));
+    fetchMock.mockResolvedValue(
+      mockStatusResponse({
+        status: 'failed',
+        progress: { stage: 'failed', percent: 0, label: 'Preparing the case.' },
+        error: {
+          code: 'AI_QUOTA_EXCEEDED',
+          message: 'Raw provider quota details must not be exposed.',
+          retryAt: '2026-11-05T08:00:01.018Z',
+        },
+      }),
+    );
 
     const result = await getCaseStatus('case-123');
     expect(result).toMatchObject({
@@ -47,11 +52,13 @@ describe('case status client handling', () => {
   });
 
   it('hides unknown legacy failure text behind the safe generic message', async () => {
-    fetchMock.mockResolvedValue(mockStatusResponse({
-      status: 'failed',
-      progress: { stage: 'failed', percent: 0, label: 'Preparing the case.' },
-      error: { code: 'GENERATION_FAILED', message: 'Invalid option : option' },
-    }));
+    fetchMock.mockResolvedValue(
+      mockStatusResponse({
+        status: 'failed',
+        progress: { stage: 'failed', percent: 0, label: 'Preparing the case.' },
+        error: { code: 'GENERATION_FAILED', message: 'Invalid option : option' },
+      }),
+    );
 
     await expect(getCaseStatus('case-123')).resolves.toMatchObject({
       errorCode: 'GENERATION_FAILED',
@@ -60,7 +67,9 @@ describe('case status client handling', () => {
   });
 
   it('does not expose backend details when a status request fails', async () => {
-    fetchMock.mockResolvedValue(mockStatusResponse({ error: { message: 'internal database stack trace' } }, false, 500));
+    fetchMock.mockResolvedValue(
+      mockStatusResponse({ error: { message: 'internal database stack trace' } }, false, 500),
+    );
 
     await expect(getCaseStatus('case-123')).rejects.toThrow('Something went wrong while checking case generation.');
   });

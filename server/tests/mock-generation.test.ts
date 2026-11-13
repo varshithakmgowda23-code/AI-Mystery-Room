@@ -24,7 +24,9 @@ describe('mock generation pipeline', () => {
   });
 
   it.each([
-    ['easy', 4, 8], ['medium', 5, 11], ['hard', 6, 14],
+    ['easy', 4, 8],
+    ['medium', 5, 11],
+    ['hard', 6, 14],
   ] as const)('creates a fair %s fixture with required evidence', (difficulty, suspectCount, evidenceCount) => {
     const fixture = buildMockCase(difficulty, 'classic_noir', 'A clock disappears from an archive.');
     expect(fixture.suspects).toHaveLength(suspectCount);
@@ -42,16 +44,23 @@ describe('mock generation pipeline', () => {
     await generateCase('aaaaaaaaaaaaaaaaaaaaaaaa');
     expect(modelState.updateOne).toHaveBeenCalledWith(
       { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa' },
-      expect.objectContaining({ $set: expect.objectContaining({ status: 'ready', progress: { stage: 'complete', percent: 100 } }) }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ status: 'ready', progress: { stage: 'complete', percent: 100 } }),
+      }),
     );
-    expect(modelState.updateOne.mock.calls.some(([, update]) => update.$set?.progress?.stage === 'validation')).toBe(true);
+    expect(modelState.updateOne.mock.calls.some(([, update]) => update.$set?.progress?.stage === 'validation')).toBe(
+      true,
+    );
   });
 
   it('marks generations older than ten minutes as failed after a restart', async () => {
     const now = new Date('2026-01-01T12:00:00.000Z');
     await expect(failStuckGenerations(now)).resolves.toBe(2);
     expect(modelState.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ status: { $in: ['queued', 'generating'] }, updatedAt: { $lt: new Date('2026-01-01T11:50:00.000Z') } }),
+      expect.objectContaining({
+        status: { $in: ['queued', 'generating'] },
+        updatedAt: { $lt: new Date('2026-01-01T11:50:00.000Z') },
+      }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'failed' }) }),
     );
   });

@@ -22,15 +22,34 @@ export interface MockCaseContent {
   suspects: Array<Record<string, unknown>>;
   evidence: MockEvidence[];
   hidden: {
-    truth: { culpritId: string; motive: string; method: string; timeline: Array<{ time: string; event: string }>; explanation: string };
-    clueMap: Array<{ clueId: string; pointsTo: string | null; kind: ClueKind; description: string }>;
+    truth: {
+      culpritId: string;
+      motive: string;
+      method: string;
+      timeline: Array<{ time: string; event: string }>;
+      explanation: string;
+    };
+    clueMap: Array<{
+      clueId: string;
+      pointsTo: string | null;
+      kind: ClueKind;
+      evidenceType: MockEvidence['type'];
+      description: string;
+    }>;
     hints: [string, string, string];
     validationReport: { mode: 'mock'; passed: true; checkedAt: string; supportingClues: string[] };
   };
 }
 
 const suspectNames = ['Mara Ellis', 'Theo Venn', 'Iris Calder', 'Jonah Reed', 'Nina Sol', 'Felix Ward'];
-const suspectRoles = ['Gallery curator', 'Restoration specialist', 'Event coordinator', 'Security supervisor', 'Photographer', 'Donor liaison'];
+const suspectRoles = [
+  'Gallery curator',
+  'Restoration specialist',
+  'Event coordinator',
+  'Security supervisor',
+  'Photographer',
+  'Donor liaison',
+];
 const culpritId = 's2';
 const placeholderImage = '/media/evidence-placeholder.svg';
 
@@ -49,9 +68,15 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
       role: suspectRoles[index],
       description: `${name} is the ${suspectRoles[index].toLowerCase()} at the fictional Bellweather Gallery.`,
       appearancePrompt: `Stylized editorial portrait of a fictional ${suspectRoles[index].toLowerCase()}, ink and warm sepia, no photorealism.`,
-      secret: id === culpritId ? 'Theo moved the painting to hide a forged provenance record.' : 'They concealed a harmless personal embarrassment.',
+      secret:
+        id === culpritId
+          ? 'Theo moved the painting to hide a forged provenance record.'
+          : 'They concealed a harmless personal embarrassment.',
       portraitPath: '/media/portrait-placeholder.svg',
-      alibi: id === culpritId ? 'Says they were checking the east display room.' : `Was accounted for in the ${['archive', 'foyer', 'coat room', 'loading bay', 'library'][index % 5]} during the key interval.`,
+      alibi:
+        id === culpritId
+          ? 'Says they were checking the east display room.'
+          : `Was accounted for in the ${['archive', 'foyer', 'coat room', 'loading bay', 'library'][index % 5]} during the key interval.`,
     };
   });
 
@@ -63,13 +88,14 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
     const clueId = `c${index + 1}`;
     let kind: ClueKind = 'context';
     let pointsTo: string | null = null;
-    if (index < trueCount) { kind = 'true_clue'; pointsTo = culpritId; }
-    else if (index < trueCount + redHerringCount) {
+    if (index < trueCount) {
+      kind = 'true_clue';
+      pointsTo = culpritId;
+    } else if (index < trueCount + redHerringCount) {
       kind = 'red_herring';
       const innocentIds = suspects.filter((suspect) => suspect.id !== culpritId).map((suspect) => String(suspect.id));
       pointsTo = innocentIds[(index - trueCount) % innocentIds.length];
-    }
-    else if (index - trueCount - redHerringCount < suspectCount - 1) {
+    } else if (index - trueCount - redHerringCount < suspectCount - 1) {
       kind = 'alibi';
       const innocentIds = suspects.filter((suspect) => suspect.id !== culpritId).map((suspect) => String(suspect.id));
       pointsTo = innocentIds[(index - trueCount - redHerringCount) % innocentIds.length];
@@ -77,54 +103,123 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
 
     const occurredAt = new Date(Date.UTC(2025, 3, 18, 19 + Math.floor(index / 3), (index * 11) % 60)).toISOString();
     const common = {
-      id, type, occurredAt, source: type === 'chat' ? 'Recovered from the event planning group chat' : 'Bellweather Gallery case archive',
-      clueId, pointsTo, kind,
+      id,
+      type,
+      occurredAt,
+      source: type === 'chat' ? 'Recovered from the event planning group chat' : 'Bellweather Gallery case archive',
+      clueId,
+      pointsTo,
+      kind,
     };
-    const trueSummary = index === 0 ? 'A message places the restoration cart by the east room just before the alarm.' : index === 1 ? 'A second message conflicts with the restorer’s account of where they were.' : index === 3 ? 'A second photograph records the same cart turned toward the service corridor.' : 'A service note ties the moved frame to the restoration cart.';
-    const summary = kind === 'true_clue' ? trueSummary : kind === 'red_herring' ? 'A detail looks suspicious until it is compared with the event schedule.' : kind === 'alibi' ? 'A routine record helps place one guest away from the gallery.' : 'A timestamp adds context to the evening’s sequence.';
+    const trueSummary =
+      index === 0
+        ? 'A message places the restoration cart by the east room just before the alarm.'
+        : index === 1
+          ? 'A second message conflicts with the restorer’s account of where they were.'
+          : index === 3
+            ? 'A second photograph records the same cart turned toward the service corridor.'
+            : 'A service note ties the moved frame to the restoration cart.';
+    const summary =
+      kind === 'true_clue'
+        ? trueSummary
+        : kind === 'red_herring'
+          ? 'A detail looks suspicious until it is compared with the event schedule.'
+          : kind === 'alibi'
+            ? 'A routine record helps place one guest away from the gallery.'
+            : 'A timestamp adds context to the evening’s sequence.';
     let title = `Evidence ${index + 1}`;
     let content: Record<string, unknown>;
     let mediaStatus: MockEvidence['mediaStatus'];
     if (type === 'chat') {
       title = index === 0 ? 'Planning chat: Mara & Theo' : 'Event group chat';
       content = {
-        participants: ['Mara Ellis', 'Theo Venn'], platform: 'whatsapp',
+        participants: ['Mara Ellis', 'Theo Venn'],
+        platform: 'whatsapp',
         messages: Array.from({ length: 8 }, (_, messageIndex) => ({
           sender: messageIndex % 2 === 0 ? 'Mara Ellis' : 'Theo Venn',
-          text: messageIndex === 3 && index === 0 ? 'I will check the east room before the doors open.' : messageIndex === 3 && index === 1 ? 'I never went near the east room; I stayed in the foyer until 8:20.' : ['The labels are ready.', 'I left the cart by the service door.', 'See you after the toast.'][messageIndex % 3],
-          timestamp: new Date(Date.parse(occurredAt) + messageIndex * 60_000).toISOString(), status: 'read',
+          text:
+            messageIndex === 3 && index === 0
+              ? 'I will check the east room before the doors open.'
+              : messageIndex === 3 && index === 1
+                ? 'I never went near the east room; I stayed in the foyer until 8:20.'
+                : ['The labels are ready.', 'I left the cart by the service door.', 'See you after the toast.'][
+                    messageIndex % 3
+                  ],
+          timestamp: new Date(Date.parse(occurredAt) + messageIndex * 60_000).toISOString(),
+          status: 'read',
         })),
       };
     } else if (type === 'image') {
       title = index === 2 ? 'Service corridor photograph' : 'Gallery floor photograph';
       mediaStatus = 'placeholder';
-      content = { imageUrl: placeholderImage, caption: index === 2 ? 'A restoration cart bearing a small TV tool tag is parked beside the east room.' : 'The restoration cart is turned toward the service corridor after the toast.', altText: 'Placeholder image for fictional gallery evidence.', metadata: { takenAt: occurredAt, location: 'East service corridor', device: 'Event camera' } };
+      content = {
+        imageUrl: placeholderImage,
+        caption:
+          index === 2
+            ? 'A restoration cart bearing a small TV tool tag is parked beside the east room.'
+            : 'The restoration cart is turned toward the service corridor after the toast.',
+        altText: 'Placeholder image for fictional gallery evidence.',
+        metadata: { takenAt: occurredAt, location: 'East service corridor', device: 'Event camera' },
+      };
     } else if (type === 'cctv') {
       title = 'CCTV: East Corridor';
       mediaStatus = 'placeholder';
       content = {
-        cameraId: 'CAM-E2', location: 'East corridor',
-        frames: Array.from({ length: 3 }, (_, frameIndex) => ({ imageUrl: placeholderImage, timestamp: new Date(Date.parse(occurredAt) + frameIndex * 90_000).toISOString(), note: 'A figure passes the service entrance.' })),
+        cameraId: 'CAM-E2',
+        location: 'East corridor',
+        frames: Array.from({ length: 3 }, (_, frameIndex) => ({
+          imageUrl: placeholderImage,
+          timestamp: new Date(Date.parse(occurredAt) + frameIndex * 90_000).toISOString(),
+          note: 'A figure passes the service entrance.',
+        })),
         transcriptOrLog: 'Three still frames from the fictional east corridor camera.',
       };
     } else if (type === 'document') {
       title = index === 5 ? 'Restoration cart checkout' : `Gallery document ${index + 1}`;
-      content = { docKind: 'report', contentMarkdown: `**Bellweather Gallery**\n\nCart checkout recorded at ${occurredAt}. The service cart was returned before closing.` };
+      content = {
+        docKind: 'report',
+        contentMarkdown: `**Bellweather Gallery**\n\nCart checkout recorded at ${occurredAt}. The service cart was returned before closing.`,
+      };
     } else if (type === 'call_log') {
       title = 'Front desk call log';
-      content = { owner: 'Gallery front desk', entries: [{ contact: 'Event desk', direction: 'in', time: occurredAt, durationSec: 42 }, { contact: 'Security office', direction: 'out', time: new Date(Date.parse(occurredAt) + 8 * 60_000).toISOString(), durationSec: 81 }] };
+      content = {
+        owner: 'Gallery front desk',
+        entries: [
+          { contact: 'Event desk', direction: 'in', time: occurredAt, durationSec: 42 },
+          {
+            contact: 'Security office',
+            direction: 'out',
+            time: new Date(Date.parse(occurredAt) + 8 * 60_000).toISOString(),
+            durationSec: 81,
+          },
+        ],
+      };
     } else {
       title = 'Event coordinator email';
-      content = { from: 'Mara Ellis', to: ['Theo Venn'], subject: 'Closing checklist', sentAt: occurredAt, bodyText: 'Please return the restoration cart and confirm the east room is clear.' };
+      content = {
+        from: 'Mara Ellis',
+        to: ['Theo Venn'],
+        subject: 'Closing checklist',
+        sentAt: occurredAt,
+        bodyText: 'Please return the restoration cart and confirm the east room is clear.',
+      };
     }
     return { ...common, title, summary, content, ...(mediaStatus ? { mediaStatus } : {}) };
   });
 
   const clueMap = evidence.map((item) => ({
     clueId: item.clueId,
+    evidenceType: item.type,
     pointsTo: item.pointsTo,
     kind: item.kind,
-    description: item.kind === 'true_clue' ? `This evidence supports the deduction that ${suspectNames[1]} moved the painting.` : item.kind === 'red_herring' ? 'This points toward an innocent suspect but has a routine explanation.' : item.kind === 'alibi' ? 'This gives a verifiable account of an innocent suspect’s whereabouts.' : 'This supports the chronology without identifying the culprit.',
+    description:
+      item.kind === 'true_clue'
+        ? `This evidence supports the deduction that ${suspectNames[1]} moved the painting.`
+        : item.kind === 'red_herring'
+          ? 'This points toward an innocent suspect but has a routine explanation.'
+          : item.kind === 'alibi'
+            ? 'This gives a verifiable account of an innocent suspect’s whereabouts.'
+            : 'This supports the chronology without identifying the culprit.',
   }));
 
   return {
@@ -137,13 +232,15 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
       truth: {
         culpritId,
         motive: 'Theo wanted to conceal a forged provenance record before the gallery’s review.',
-        method: 'Theo used a restoration cart to move the portrait into a service room while the room was briefly unattended.',
+        method:
+          'Theo used a restoration cart to move the portrait into a service room while the room was briefly unattended.',
         timeline: [
           { time: '7:42 PM', event: 'The east room painting is confirmed in place.' },
           { time: '8:06 PM', event: 'Theo moves the restoration cart through the east corridor.' },
           { time: '8:14 PM', event: 'The portrait is found missing after the toast.' },
         ],
-        explanation: 'Theo Venn moved the portrait using a restoration cart. The chat, checkout record, and corridor image place Theo and the cart at the east room during the critical window. The suspicious guest schedule entries are explained by routine event duties.',
+        explanation:
+          'Theo Venn moved the portrait using a restoration cart. The chat, checkout record, and corridor image place Theo and the cart at the east room during the critical window. The suspicious guest schedule entries are explained by routine event duties.',
       },
       clueMap,
       hints: [
@@ -151,7 +248,12 @@ export function buildMockCase(difficulty: Difficulty, tone: Tone, seed: string):
         'Look for a suspect whose written account conflicts with a time-stamped record.',
         'The cart checkout and the east corridor clues point to the same person.',
       ],
-      validationReport: { mode: 'mock', passed: true, checkedAt: new Date().toISOString(), supportingClues: evidence.filter((item) => item.kind === 'true_clue').map((item) => item.id) },
+      validationReport: {
+        mode: 'mock',
+        passed: true,
+        checkedAt: new Date().toISOString(),
+        supportingClues: evidence.filter((item) => item.kind === 'true_clue').map((item) => item.id),
+      },
     },
   };
 }

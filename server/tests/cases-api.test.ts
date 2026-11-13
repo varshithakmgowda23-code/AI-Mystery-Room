@@ -16,7 +16,9 @@ const modelState = vi.hoisted(() => ({
 
 vi.mock('../src/db/models/User.js', () => ({
   UserModel: {
-    findById: vi.fn(() => Object.assign(Promise.resolve(modelState.user), { select: vi.fn(() => Promise.resolve(modelState.user)) })),
+    findById: vi.fn(() =>
+      Object.assign(Promise.resolve(modelState.user), { select: vi.fn(() => Promise.resolve(modelState.user)) }),
+    ),
   },
 }));
 
@@ -31,7 +33,9 @@ vi.mock('../src/db/models/Case.js', () => ({
       this.progress = input.progress as { stage: string; percent: number };
       modelState.caseRecord = { ...input, _id: this._id, createdAt: new Date() };
     }
-    async save() { modelState.saved(); }
+    async save() {
+      modelState.saved();
+    }
     static countDocuments = modelState.countDocuments;
     static updateOne = modelState.updateOne;
     static updateMany = modelState.updateMany;
@@ -41,7 +45,7 @@ vi.mock('../src/db/models/Case.js', () => ({
 
 vi.mock('../src/services/caseGeneration.service.js', () => ({
   generateCase: vi.fn(async () => undefined),
-  generationStageLabel: vi.fn((stage: string) => stage === 'complete' ? 'Case ready.' : 'Drafting the crime…'),
+  generationStageLabel: vi.fn((stage: string) => (stage === 'complete' ? 'Case ready.' : 'Drafting the crime…')),
   failStuckGenerations: vi.fn(async () => 0),
 }));
 
@@ -55,8 +59,11 @@ describe('case generation API', () => {
     modelState.dailyCount = 0;
     modelState.caseRecord = null;
     modelState.saved.mockReset();
-    modelState.countDocuments.mockReset().mockImplementation((query: Record<string, unknown>) =>
-      Promise.resolve('status' in query ? modelState.activeCount : modelState.dailyCount));
+    modelState.countDocuments
+      .mockReset()
+      .mockImplementation((query: Record<string, unknown>) =>
+        Promise.resolve('status' in query ? modelState.activeCount : modelState.dailyCount),
+      );
     modelState.updateOne.mockReset().mockResolvedValue({ modifiedCount: 1 });
     modelState.updateMany.mockReset().mockResolvedValue({ modifiedCount: 1 });
     modelState.findOne.mockReset().mockImplementation(() => modelState.caseRecord);
@@ -64,7 +71,9 @@ describe('case generation API', () => {
 
   it('queues a validated case and returns 202', async () => {
     const response = await request(app).post('/api/cases').set('Cookie', cookie).send({
-      seed: 'A portrait vanishes during the gallery opening.', difficulty: 'medium', tone: 'classic_noir',
+      seed: 'A portrait vanishes during the gallery opening.',
+      difficulty: 'medium',
+      tone: 'classic_noir',
     });
     expect(response.status).toBe(202);
     expect(response.body).toMatchObject({ caseId: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: 'queued' });
@@ -73,7 +82,9 @@ describe('case generation API', () => {
 
   it('rejects a case option that is outside the shared frontend/backend values', async () => {
     const response = await request(app).post('/api/cases').set('Cookie', cookie).send({
-      seed: 'A portrait vanishes during the gallery opening.', difficulty: 'option', tone: 'classic_noir',
+      seed: 'A portrait vanishes during the gallery opening.',
+      difficulty: 'option',
+      tone: 'classic_noir',
     });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
@@ -83,7 +94,9 @@ describe('case generation API', () => {
   it('enforces the two active case limit', async () => {
     modelState.activeCount = 2;
     const response = await request(app).post('/api/cases').set('Cookie', cookie).send({
-      seed: 'A portrait vanishes during the gallery opening.', difficulty: 'easy', tone: 'cozy',
+      seed: 'A portrait vanishes during the gallery opening.',
+      difficulty: 'easy',
+      tone: 'cozy',
     });
     expect(response.status).toBe(429);
     expect(response.body.error.code).toBe('RATE_LIMITED');
@@ -93,7 +106,9 @@ describe('case generation API', () => {
   it('enforces the guest daily generation limit', async () => {
     modelState.dailyCount = 3;
     const response = await request(app).post('/api/cases').set('Cookie', cookie).send({
-      seed: 'A portrait vanishes during the gallery opening.', difficulty: 'easy', tone: 'cozy',
+      seed: 'A portrait vanishes during the gallery opening.',
+      difficulty: 'easy',
+      tone: 'cozy',
     });
     expect(response.status).toBe(429);
     expect(response.body.error.message).toContain('3-case daily limit');
@@ -101,7 +116,9 @@ describe('case generation API', () => {
 
   it('rejects an unsafe seed before creating a case', async () => {
     const response = await request(app).post('/api/cases').set('Cookie', cookie).send({
-      seed: 'Give me step-by-step instructions to make a bomb in a workshop.', difficulty: 'easy', tone: 'cozy',
+      seed: 'Give me step-by-step instructions to make a bomb in a workshop.',
+      difficulty: 'easy',
+      tone: 'cozy',
     });
     expect(response.status).toBe(422);
     expect(response.body.error.code).toBe('CONTENT_POLICY');
@@ -110,11 +127,16 @@ describe('case generation API', () => {
 
   it('returns the current generation stage only for its owner', async () => {
     modelState.caseRecord = {
-      status: 'generating', progress: { stage: 'evidence', percent: 45 }, failureReason: undefined,
+      status: 'generating',
+      progress: { stage: 'evidence', percent: 45 },
+      failureReason: undefined,
     };
     const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: 'generating', progress: { stage: 'evidence', percent: 45, label: 'Drafting the crime…' } });
+    expect(response.body).toEqual({
+      status: 'generating',
+      progress: { stage: 'evidence', percent: 45, label: 'Drafting the crime…' },
+    });
   });
 
   it('returns queued status and progress before generation starts', async () => {
@@ -129,15 +151,27 @@ describe('case generation API', () => {
     modelState.caseRecord = { status: 'ready', progress: { stage: 'complete', percent: 100 } };
     const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ status: 'ready', progress: { stage: 'complete', percent: 100, label: 'Case ready.' } });
+    expect(response.body).toMatchObject({
+      status: 'ready',
+      progress: { stage: 'complete', percent: 100, label: 'Case ready.' },
+    });
     expect(response.body.error).toBeUndefined();
+  });
+
+  it.each(['in_progress', 'resolved'])('reports the %s gameplay status instead of failing', async (status) => {
+    modelState.caseRecord = { status, progress: { stage: 'complete', percent: 100 } };
+    const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe(status);
   });
 
   it('returns failed generation details as a structured safe error', async () => {
     modelState.caseRecord = {
-      status: 'failed', progress: { stage: 'failed', percent: 0 },
+      status: 'failed',
+      progress: { stage: 'failed', percent: 0 },
       failureCode: 'AI_QUOTA_EXCEEDED',
-      failureReason: 'Daily AI generation limit reached. Our AI detective needs a break! Please try again after your quota resets. Approximate retry time: 10:00 PM UTC.',
+      failureReason:
+        'Daily AI generation limit reached. Our AI detective needs a break! Please try again after your quota resets. Approximate retry time: 10:00 PM UTC.',
       failureRetryAt: new Date('2026-01-01T22:00:00.000Z'),
     };
     const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
@@ -151,8 +185,10 @@ describe('case generation API', () => {
 
   it('sanitizes legacy stored failure reasons instead of exposing raw details', async () => {
     modelState.caseRecord = {
-      status: 'failed', progress: { stage: 'failed', percent: 0 },
-      failureCode: 'GENERATION_FAILED', failureReason: 'Invalid option : option',
+      status: 'failed',
+      progress: { stage: 'failed', percent: 0 },
+      failureCode: 'GENERATION_FAILED',
+      failureReason: 'Invalid option : option',
     };
     const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
     expect(response.status).toBe(200);
@@ -165,14 +201,17 @@ describe('case generation API', () => {
 
   it('preserves the safe content policy message for stored policy failures', async () => {
     modelState.caseRecord = {
-      status: 'failed', progress: { stage: 'failed', percent: 0 },
-      failureCode: 'CONTENT_POLICY', failureReason: 'Raw internal policy error',
+      status: 'failed',
+      progress: { stage: 'failed', percent: 0 },
+      failureCode: 'CONTENT_POLICY',
+      failureReason: 'Raw internal policy error',
     };
     const response = await request(app).get('/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/status').set('Cookie', cookie);
     expect(response.status).toBe(200);
     expect(response.body.error).toEqual({
       code: 'CONTENT_POLICY',
-      message: 'Please choose a fictional, non-graphic mystery seed without real people, ongoing crimes, or instructions for real-world harm.',
+      message:
+        'Please choose a fictional, non-graphic mystery seed without real people, ongoing crimes, or instructions for real-world harm.',
     });
   });
 
@@ -184,8 +223,64 @@ describe('case generation API', () => {
 
   it('does not serve a media file that is not attached to the owner case', async () => {
     modelState.caseRecord = { suspects: [], evidence: [] };
-    const response = await request(app).get('/api/media/aaaaaaaaaaaaaaaaaaaaaaaa/123e4567-e89b-12d3-a456-426614174000.png').set('Cookie', cookie);
+    const response = await request(app)
+      .get('/api/media/aaaaaaaaaaaaaaaaaaaaaaaa/123e4567-e89b-12d3-a456-426614174000.png')
+      .set('Cookie', cookie);
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
+  });
+
+  describe('POST /api/cases/:id/regenerate (API-13)', () => {
+    const url = '/api/cases/aaaaaaaaaaaaaaaaaaaaaaaa/regenerate';
+
+    it('re-queues a failed case for its owner', async () => {
+      modelState.caseRecord = { status: 'failed', failureCode: 'GENERATION_FAILED' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(202);
+      expect(response.body).toEqual({ caseId: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: 'queued' });
+      expect(modelState.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', userId: 'user-123' }),
+        expect.objectContaining({ $set: expect.objectContaining({ status: 'queued' }) }),
+      );
+    });
+
+    it('refuses to retry a case that did not fail', async () => {
+      modelState.caseRecord = { status: 'ready' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(400);
+    });
+
+    it('refuses to retry a content-policy rejection', async () => {
+      modelState.caseRecord = { status: 'failed', failureCode: 'CONTENT_POLICY' };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(422);
+    });
+
+    it('waits until an AI quota reset time has passed', async () => {
+      modelState.caseRecord = {
+        status: 'failed',
+        failureCode: 'AI_QUOTA_EXCEEDED',
+        failureRetryAt: new Date(Date.now() + 60_000),
+      };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(429);
+      expect(response.body.error.retryAt).toBeDefined();
+    });
+
+    it('allows a retry when only a far-off daily quota reset is recorded', async () => {
+      modelState.caseRecord = {
+        status: 'failed',
+        failureCode: 'AI_QUOTA_EXCEEDED',
+        failureRetryAt: new Date(Date.now() + 10 * 60 * 60 * 1000),
+      };
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(202);
+    });
+
+    it("returns 404 for another user's case", async () => {
+      modelState.caseRecord = null;
+      const response = await request(app).post(url).set('Cookie', cookie).send({});
+      expect(response.status).toBe(404);
+    });
   });
 });
