@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400" role="img" aria-labelledby="title desc">
+  <title id="title">Suspect portrait placeholder</title><desc id="desc">A fictional silhouette portrait.</desc>
+  <rect width="320" height="400" fill="#22211c"/><circle cx="160" cy="135" r="68" fill="#716044"/><path d="M54 382c8-112 68-157 106-157s98 45 106 157" fill="#514631"/><path d="M72 400v-22h176v22" fill="#c6a76a" opacity=".45"/>
+</svg>
