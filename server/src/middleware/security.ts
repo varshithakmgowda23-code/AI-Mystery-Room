@@ -18,13 +18,21 @@ function limiter(max: number, windowMs: number, message: string, extra: Partial<
   });
 }
 
-/** Status polling and media are high-frequency reads; they get their own bucket (DEC-007). */
-function isHighFrequencyRead(request: Request): boolean {
-  if (request.method !== 'GET') return false;
-  return (
-    /^\/api\/cases\/[a-f\d]{24}\/status$/i.test(request.originalUrl.split('?')[0]) ||
-    request.originalUrl.startsWith('/api/media/')
-  );
+const ID = '[a-f\\d]{24}';
+const GAMEPLAY_ROUTES: Array<[string, RegExp]> = [
+  ['GET', new RegExp(`^/api/cases/${ID}(?:/status)?$`, 'i')],
+  ['PATCH', new RegExp(`^/api/cases/${ID}/(?:notes|suspect-tags)$`, 'i')],
+  ['POST', new RegExp(`^/api/cases/${ID}/evidence/e\\d{1,2}/view$`, 'i')],
+  ['GET', /^\/api\/media\//],
+];
+
+/**
+ * Routine gameplay traffic (status polling, opening the board, notes autosave, tags,
+ * viewed markers, media) gets its own larger bucket (DEC-007).
+ */
+export function isGameplayTraffic(request: Pick<Request, 'method' | 'originalUrl'>): boolean {
+  const path = request.originalUrl.split('?')[0];
+  return GAMEPLAY_ROUTES.some(([method, pattern]) => request.method === method && pattern.test(path));
 }
 
 /** Spec §15.4: global 100 requests / 15 min / IP. */
@@ -33,7 +41,7 @@ export const globalLimiter = limiter(
   FIFTEEN_MINUTES,
   'Too many requests. Please slow down and try again shortly.',
   {
-    skip: (request) => !env.RATE_LIMIT_ENABLED || isHighFrequencyRead(request),
+    skip: (request) => !env.RATE_LIMIT_ENABLED || isGameplayTraffic(request),
   },
 );
 
@@ -42,7 +50,7 @@ export const pollingLimiter = limiter(
   FIFTEEN_MINUTES,
   'Too many requests. Please slow down and try again shortly.',
   {
-    skip: (request) => !env.RATE_LIMIT_ENABLED || !isHighFrequencyRead(request),
+    skip: (request) => !env.RATE_LIMIT_ENABLED || !isGameplayTraffic(request),
   },
 );
 

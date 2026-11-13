@@ -53,3 +53,19 @@ describe('platform security middleware', () => {
     expect(limited.body.error.code).toBe('RATE_LIMITED');
   });
 });
+
+describe('rate-limit buckets (DEC-007)', () => {
+  it('classifies routine gameplay requests into the gameplay bucket only', async () => {
+    const { isGameplayTraffic } = await import('../src/middleware/security.js');
+    const id = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    const req = (method: string, originalUrl: string) => ({ method, originalUrl }) as never;
+    expect(isGameplayTraffic(req('GET', `/api/cases/${id}`))).toBe(true);
+    expect(isGameplayTraffic(req('GET', `/api/cases/${id}/status?x=1`))).toBe(true);
+    expect(isGameplayTraffic(req('PATCH', `/api/cases/${id}/notes`))).toBe(true);
+    expect(isGameplayTraffic(req('POST', `/api/cases/${id}/evidence/e12/view`))).toBe(true);
+    expect(isGameplayTraffic(req('GET', `/api/media/${id}/x.png`))).toBe(true);
+    expect(isGameplayTraffic(req('POST', `/api/cases/${id}/hints`))).toBe(false);
+    expect(isGameplayTraffic(req('POST', '/api/cases'))).toBe(false);
+    expect(isGameplayTraffic(req('POST', '/api/auth/login'))).toBe(false);
+  });
+});

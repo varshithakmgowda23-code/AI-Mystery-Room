@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatRetryTime, getCaseStatus } from './App.js';
+import { formatRetryTime, getCaseStatus } from './api/cases.js';
 
 function mockStatusResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body };

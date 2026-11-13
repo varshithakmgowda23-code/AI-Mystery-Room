@@ -74,6 +74,16 @@ const stateSchema = new Schema(
   { _id: false },
 );
 
+const resultSchema = new Schema(
+  {
+    score: { type: Number, required: true },
+    correct: { type: Boolean, required: true },
+    culpritId: { type: String, required: true },
+    gaveUp: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
 const caseSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, required: true, index: true },
@@ -100,12 +110,15 @@ const caseSchema = new Schema(
     evidence: { type: [evidenceSchema], default: [] },
     hidden: { type: hiddenSchema, select: false },
     state: { type: stateSchema, default: () => ({}) },
+    result: { type: resultSchema },
+    share: { enabled: { type: Boolean, default: false }, token: { type: String } },
     expiresAt: { type: Date },
   },
   { timestamps: true },
 );
 
 caseSchema.index({ userId: 1, createdAt: -1 });
+caseSchema.index({ 'share.token': 1 }, { unique: true, sparse: true });
 caseSchema.index(
   { expiresAt: 1 },
   { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $exists: true } } },

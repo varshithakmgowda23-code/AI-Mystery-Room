@@ -33,7 +33,7 @@ jobs:
         ports: ['27017:27017']
     env:
       MOCK_GEMINI: 'true'
-      MONGODB_URI: mongodb://127.0.0.1:27017/ai-mystery-room-ci
+      MONGODB_URI_E2E: mongodb://127.0.0.1:27017/ai-mystery-room-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
