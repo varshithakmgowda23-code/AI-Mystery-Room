@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { postAuth, type User } from '../api/auth.js';
+import { SiteHeader } from '../components/layout/SiteHeader.js';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const queryClient = useQueryClient();
@@ -28,61 +29,56 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     mutation.mutate(payload);
   }
 
+  const login = mode === 'login';
   return (
-    <main className="auth-shell">
-      <Link className="wordmark" to="/">
-        <span className="wordmark-icon">M</span> MYSTERY ROOM
-      </Link>
-      <section className="auth-card">
-        <p className="eyebrow">CASE FILE ACCESS</p>
-        <h1>{mode === 'login' ? 'Welcome back.' : 'Join the investigation.'}</h1>
-        <p className="auth-copy">
-          {mode === 'login'
-            ? 'Sign in to return to your case files.'
-            : 'Create an account to keep your cases and solve at your own pace.'}
-        </p>
-        <form onSubmit={submit}>
-          {mode === 'register' && (
+    <div className="auth-page">
+      <SiteHeader />
+      <main className="auth-main">
+        <section className="auth-panel" aria-labelledby="auth-title">
+          <h1 id="auth-title">{login ? 'Welcome back, detective.' : 'Open your own case files.'}</h1>
+          <p className="auth-copy">
+            {login
+              ? 'Sign in to return to your cases.'
+              : 'An account keeps your cases and scores. Guest cases are deleted after 7 days.'}
+          </p>
+          <form onSubmit={submit} className="auth-form">
+            {!login && (
+              <label>
+                Display name
+                <input name="displayName" autoComplete="nickname" required maxLength={60} />
+              </label>
+            )}
             <label>
-              DISPLAY NAME
-              <input name="displayName" autoComplete="name" required maxLength={60} />
+              Email
+              <input name="email" type="email" autoComplete="email" required maxLength={254} />
             </label>
-          )}
-          <label>
-            EMAIL
-            <input name="email" type="email" autoComplete="email" required maxLength={254} />
-          </label>
-          <label>
-            PASSWORD
-            <input
-              name="password"
-              type="password"
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              required
-              minLength={mode === 'login' ? 1 : 8}
-              maxLength={128}
-            />
-          </label>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-          <button className="form-submit" type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? 'PLEASE WAIT…' : mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}{' '}
-            <span aria-hidden="true">↗</span>
-          </button>
-        </form>
-        <p className="auth-switch">
-          {mode === 'login' ? 'New to the room?' : 'Already have an account?'}{' '}
-          <Link to={mode === 'login' ? '/register' : '/login'}>
-            {mode === 'login' ? 'Create an account' : 'Sign in'}
-          </Link>
-        </p>
-        <Link className="back-link" to="/">
-          ← Back to the entrance
-        </Link>
-      </section>
-    </main>
+            <label>
+              Password
+              <input
+                name="password"
+                type="password"
+                autoComplete={login ? 'current-password' : 'new-password'}
+                required
+                minLength={login ? 1 : 8}
+                maxLength={128}
+              />
+              {!login && <span className="field-hint">At least 8 characters.</span>}
+            </label>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button className="primary-button auth-form__submit" type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Please wait…' : login ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
+          <p className="auth-switch">
+            {login ? 'New here?' : 'Already have an account?'}{' '}
+            <Link to={login ? '/register' : '/login'}>{login ? 'Create an account' : 'Sign in'}</Link>
+          </p>
+        </section>
+      </main>
+    </div>
   );
 }

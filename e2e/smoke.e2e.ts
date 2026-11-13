@@ -12,9 +12,9 @@ function trackConsoleErrors(page: Page) {
 async function openNewCase(page: Page) {
   await page.goto('/');
   await page
-    .getByLabel('SET THE SCENE')
+    .getByLabel('What happened?')
     .fill('A priceless painting vanished from a small-town art gallery during a charity gala.');
-  await page.getByRole('button', { name: /OPEN THE CASE/ }).click();
+  await page.getByRole('button', { name: 'Open the case' }).click();
   await expect(page).toHaveURL(/\/cases\/[a-f\d]{24}\/generating$/);
   await expect(page).toHaveURL(/\/cases\/[a-f\d]{24}$/, { timeout: 30_000 });
 }
@@ -62,7 +62,7 @@ test('hints are revealed one at a time after confirmation', async ({ page, isMob
 
 test('play as guest lands on an empty archive with the keep-your-cases form', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: /PLAY AS GUEST/ }).click();
+  await page.getByRole('button', { name: 'Play as guest' }).click();
   await expect(page).toHaveURL(/\/cases$/);
   await expect(page.getByText(/Signed in as guest/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Keep your cases' })).toBeVisible();
